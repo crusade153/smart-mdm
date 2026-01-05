@@ -1,4 +1,3 @@
-// src/components/mdm/MDMForm.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -40,12 +39,11 @@ export function MDMForm() {
     return defaults;
   };
 
-  // ✅ 폼 초기화 (기본값 적용)
   const form = useForm<SapMasterData>({
     defaultValues: generateDefaultValues()
   })
 
-  // ✅ 리스트 선택 시 데이터 리셋 (수정 모드 vs 신규 모드)
+  // ✅ 리스트 선택 시 데이터 리셋
   useEffect(() => {
     if (currentRequest) {
       form.reset(currentRequest.data);
@@ -55,7 +53,6 @@ export function MDMForm() {
   }, [currentRequest, form]);
 
   const onSubmit = (data: SapMasterData) => {
-    // 필수값 미입력 체크
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     
     if (currentRequest) {
@@ -87,13 +84,10 @@ export function MDMForm() {
     alert("요청사항이 메시지에 등록되었습니다.");
   }
 
-  // 필드 렌더링 로직
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
-    // 스타일: 필수값은 노란색, 고정값은 회색
     const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
     const readOnlyStyle = field.fixed ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
 
-    // 1. 제품계층구조
     if (field.type === 'custom_prdha') {
       return (
         <FormControl>
@@ -106,7 +100,6 @@ export function MDMForm() {
       );
     }
     
-    // 2. 일반 Select
     if (field.type === 'select' && field.options) {
       return (
         <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')}>
@@ -124,7 +117,6 @@ export function MDMForm() {
       );
     }
     
-    // 3. 기준정보 참조 Select
     if (field.type === 'ref_select' && field.refKey) {
         const list = (MOCK_REF_DATA as any)[field.refKey] || [];
         return (
@@ -145,7 +137,6 @@ export function MDMForm() {
         );
     }
     
-    // 4. 자재그룹
     if (field.type === 'custom_matkl') {
       return (
         <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')}>
@@ -165,7 +156,6 @@ export function MDMForm() {
       );
     }
     
-    // 5. 기본 Input
     return (
       <FormControl>
         <Input 
@@ -181,8 +171,6 @@ export function MDMForm() {
 
   return (
     <div className="flex h-full bg-slate-50/50">
-      
-      {/* 좌측 메인 폼 영역 */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="h-14 border-b bg-white px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
@@ -222,7 +210,7 @@ export function MDMForm() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
                         {MDM_FORM_SCHEMA.filter(f => f.tab === tab.id).map((field) => (
                           <div key={field.key} className={field.type === 'custom_prdha' ? 'col-span-full' : ''}>
-                            {/* ✅ name={field.key as string} 으로 타입 에러 수정 완료 */}
+                            {/* 🔥 [여기가 에러 수정된 부분] as string 추가됨 🔥 */}
                             <FormField
                               control={form.control}
                               name={field.key as string}
@@ -249,7 +237,6 @@ export function MDMForm() {
         </div>
       </div>
 
-      {/* 우측 커뮤니케이션 패널 */}
       <div className="w-[320px] border-l border-slate-200 bg-white flex flex-col shrink-0">
         <div className="h-14 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
@@ -301,7 +288,6 @@ export function MDMForm() {
           </div>
         </div>
       </div>
-
     </div>
   )
 }
