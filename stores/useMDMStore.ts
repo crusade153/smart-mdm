@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { MaterialRequest, SapMasterData, RequestStatus } from '@/types/mdm';
 
-// SAP 필드 순서 (CSV용)
+// SAP 필드 순서 (CSV 다운로드용)
 const SAP_EXPORT_ORDER = [
   "WERKS","MTART","MAKTX","MATNR","MEINS","MATKL","PRDHA","SPART","NTGEW","GEWEI",
   "MEINH","UMREZ","UMREN","EAN11","VRKME","DISPO","DISMM","LGFSB","BESKZ","LGPRO"
@@ -11,7 +11,7 @@ const SAP_EXPORT_ORDER = [
 interface MDMState {
   requests: MaterialRequest[];
   currentRequest: MaterialRequest | null;
-  selectedIds: string[]; // ✅ 체크된 항목 ID들
+  selectedIds: string[]; // 체크된 항목 ID들
 
   addRequest: (data: SapMasterData) => void;
   updateRequest: (id: string, data: Partial<SapMasterData>) => void;
@@ -19,14 +19,17 @@ interface MDMState {
   addComment: (requestId: string, message: string, writer: string) => void;
   setCurrentRequest: (request: MaterialRequest | null) => void;
   
-  toggleSelection: (id: string) => void; // ✅ 체크박스 토글
-  toggleAllSelection: (ids: string[]) => void; // ✅ 전체 선택
-  downloadSelectedCsv: () => void; // ✅ 선택된 것만 다운로드
+  // ✅ [핵심] 이 부분이 없어서 에러가 났었습니다! 추가 완료
+  createNewRequest: () => void; 
+
+  toggleSelection: (id: string) => void;
+  toggleAllSelection: (ids: string[]) => void;
+  downloadSelectedCsv: () => void;
 }
 
-// 더미 데이터 (50건 생성)
+// 더미 데이터 생성 함수
 const generateDummyData = () => {
-  return Array.from({ length: 50 }).map((_, i) => ({
+  return Array.from({ length: 15 }).map((_, i) => ({
     id: `REQ-${20250000 + i}`,
     status: i % 5 === 0 ? 'Approved' : i % 3 === 0 ? 'Review' : 'Requested',
     requesterName: i % 2 === 0 ? '김담당' : '이대리',
@@ -55,12 +58,15 @@ export const useMDMStore = create<MDMState>((set, get) => ({
       createdAt: new Date().toISOString(),
       data, comments: []
     }, ...state.requests],
-    currentRequest: null // 저장 후 닫기
+    currentRequest: null 
   })),
 
   updateRequest: (id, data) => set((state) => ({
     requests: state.requests.map(req => req.id === id ? { ...req, data: { ...req.data, ...data } } : req),
-    currentRequest: null // 저장 후 닫기
+    // 현재 보고 있는 요청이라면 그것도 업데이트 (화면 즉시 반영)
+    currentRequest: state.currentRequest?.id === id 
+      ? { ...state.currentRequest, data: { ...state.currentRequest.data, ...data } } 
+      : state.currentRequest
   })),
 
   updateStatus: (id, status) => set((state) => ({
@@ -69,13 +75,15 @@ export const useMDMStore = create<MDMState>((set, get) => ({
 
   addComment: (requestId, message, writer) => set((state) => ({
     requests: state.requests.map(req => req.id === requestId ? { ...req, comments: [...req.comments, { writer, message, createdAt: new Date().toISOString() }] } : req),
-    // 현재 열려있는 상세창에도 반영
     currentRequest: state.currentRequest?.id === requestId 
       ? { ...state.currentRequest, comments: [...state.currentRequest.comments, { writer, message, createdAt: new Date().toISOString() }] }
       : state.currentRequest
   })),
 
   setCurrentRequest: (request) => set({ currentRequest: request }),
+
+  // ✅ [핵심] 신규 작성 기능 구현 (현재 선택을 null로 만들어서 폼을 비움)
+  createNewRequest: () => set({ currentRequest: null }),
 
   toggleSelection: (id) => set((state) => ({
     selectedIds: state.selectedIds.includes(id)
@@ -87,11 +95,11 @@ export const useMDMStore = create<MDMState>((set, get) => ({
 
   downloadSelectedCsv: () => {
     const { requests, selectedIds } = get();
-    // 체크된 것들 중 '완료(Approved)' 상태인 것만 필터링
-    const targets = requests.filter(r => selectedIds.includes(r.id) && r.status === 'Approved');
+    // 선택된 항목들만 필터링
+    const targets = requests.filter(r => selectedIds.includes(r.id));
 
     if (targets.length === 0) {
-      alert("다운로드할 항목이 없습니다. (체크박스 선택 및 '완료' 상태 확인)");
+      alert("다운로드할 항목을 선택해주세요.");
       return;
     }
 
