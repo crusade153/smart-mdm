@@ -32,10 +32,11 @@ export function RequestTable() {
   const [searchTerm, setSearchTerm] = useState("")
 
   // ✅ [수정완료] 여기서 에러가 났었습니다. (req.data.MAKTX || "") 처럼 안전장치 추가!
-  const filteredRequests = requests.filter(req => 
-    (req.data.MAKTX || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+const filteredRequests = requests.filter(req => 
+  (req.data.MAKTX || "").toLowerCase().includes(searchTerm.toLowerCase()) || // 품명 검색
+  (req.id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||         // ID 검색
+  (req.requesterName || "").toLowerCase().includes(searchTerm.toLowerCase()) // 요청자 검색 (추가됨)
+);
 
   const handleSelectAll = (checked: boolean) => {
     toggleAllSelection(checked ? filteredRequests.map(r => r.id) : []);
