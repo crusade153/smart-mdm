@@ -29,7 +29,7 @@ export function MDMForm() {
   const { addRequest, updateRequest, currentRequest, addComment } = useMDMStore()
   const [commentInput, setCommentInput] = useState("")
 
-  // ✅ [핵심 수정] 스키마(sap-fields.ts)에서 고정값(defaultValue)을 추출하여 초기값 생성
+  // ✅ 스키마에서 기본값(Default Value) 추출 함수
   const generateDefaultValues = () => {
     const defaults: any = {};
     MDM_FORM_SCHEMA.forEach(field => {
@@ -40,17 +40,16 @@ export function MDMForm() {
     return defaults;
   };
 
+  // ✅ 폼 초기화 (기본값 적용)
   const form = useForm<SapMasterData>({
-    defaultValues: generateDefaultValues() // 폼이 처음 로드될 때 고정값 적용
+    defaultValues: generateDefaultValues()
   })
 
-  // ✅ [핵심 수정] 신규 작성 모드일 때도 고정값이 들어가도록 리셋 로직 수정
+  // ✅ 리스트 선택 시 데이터 리셋 (수정 모드 vs 신규 모드)
   useEffect(() => {
     if (currentRequest) {
-      // 수정 모드: 저장된 데이터 불러오기
       form.reset(currentRequest.data);
     } else {
-      // 신규 모드: 고정값(Default Value)으로 초기화
       form.reset(generateDefaultValues());
     }
   }, [currentRequest, form]);
@@ -88,13 +87,13 @@ export function MDMForm() {
     alert("요청사항이 메시지에 등록되었습니다.");
   }
 
-  // 필드 렌더링 로직 (기준정보 매핑 및 스타일 적용)
+  // 필드 렌더링 로직
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     // 스타일: 필수값은 노란색, 고정값은 회색
     const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
     const readOnlyStyle = field.fixed ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
 
-    // 1. 제품계층구조 (커스텀)
+    // 1. 제품계층구조
     if (field.type === 'custom_prdha') {
       return (
         <FormControl>
@@ -107,7 +106,7 @@ export function MDMForm() {
       );
     }
     
-    // 2. 일반 Select (옵션이 하드코딩된 경우 - 예: 플랜트, 자재유형)
+    // 2. 일반 Select
     if (field.type === 'select' && field.options) {
       return (
         <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')}>
@@ -125,9 +124,8 @@ export function MDMForm() {
       );
     }
     
-    // 3. 기준정보 참조 Select (MRP, 저장위치 등 - mock-data.ts 연결)
+    // 3. 기준정보 참조 Select
     if (field.type === 'ref_select' && field.refKey) {
-        // MOCK_REF_DATA에서 해당 키(mrp, storage 등)의 데이터를 가져옴
         const list = (MOCK_REF_DATA as any)[field.refKey] || [];
         return (
           <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')}>
@@ -147,7 +145,7 @@ export function MDMForm() {
         );
     }
     
-    // 4. 자재그룹 (커스텀 - mock-data.ts 연결)
+    // 4. 자재그룹
     if (field.type === 'custom_matkl') {
       return (
         <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')}>
@@ -167,7 +165,7 @@ export function MDMForm() {
       );
     }
     
-    // 5. 기본 Input (텍스트, 숫자, 날짜)
+    // 5. 기본 Input
     return (
       <FormControl>
         <Input 
@@ -224,9 +222,10 @@ export function MDMForm() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
                         {MDM_FORM_SCHEMA.filter(f => f.tab === tab.id).map((field) => (
                           <div key={field.key} className={field.type === 'custom_prdha' ? 'col-span-full' : ''}>
+                            {/* ✅ name={field.key as string} 으로 타입 에러 수정 완료 */}
                             <FormField
                               control={form.control}
-                              name={field.key}
+                              name={field.key as string}
                               render={({ field: fieldProps }) => (
                                 <FormItem className="space-y-1">
                                   <FormLabel className="text-[11px] font-bold text-slate-500 flex items-center">
