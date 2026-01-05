@@ -150,3 +150,35 @@ export interface MaterialRequest {
     createdAt: string;
   }[];
 }
+
+// src/types/mdm.ts
+
+export interface SapMasterData {
+  [key: string]: any; // SAP 필드들은 기존과 동일 (생략 없이 사용 가능하도록 인덱스 시그니처 유지)
+  WERKS: string; MTART: string; MAKTX: string; // ...필수 필드들
+}
+
+export type RequestStatus = 'Requested' | 'Review' | 'Approved' | 'Reject';
+
+export interface SapMasterData {
+  [key: string]: any; // 인덱스 시그니처 (유연한 필드 접근 허용)
+  WERKS?: string; 
+  MTART?: string; 
+  MAKTX?: string;
+  MATNR?: string;
+}
+
+export interface MaterialRequest {
+  id: string;
+  status: RequestStatus; // 위에서 정의한 타입을 사용
+  requesterName: string;
+  processorName?: string;
+  createdAt: string;
+  completedAt?: string;
+  data: SapMasterData;
+  comments: {
+    writer: string;
+    message: string;
+    createdAt: string;
+  }[];
+}
