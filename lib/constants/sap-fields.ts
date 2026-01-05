@@ -32,11 +32,11 @@ export const FORM_TABS = [
   { id: 'class', label: '분류' },
 ];
 
-// ✅ GAS 코드 기반 고정값 및 필수값 완벽 이식
 export const MDM_FORM_SCHEMA: FieldMeta[] = [
   // [Tab 1] 기본정보 (Basic)
   { key: 'WERKS', label: '플랜트', tab: 'basic', type: 'select', required: true, options: {'1021':'1021 (K1)', '1022':'1022 (K3)', '1023':'1023 (K2)', '1031':'1031 (FBH)'} },
-  { key: 'MTART', label: '자재유형', tab: 'basic', type: 'select', required: true, options: {'FERT':'FERT (완제품)', 'ROH':'ROH (원자재)', 'ZSET':'ZSET (세트)'} },
+  // ✅ [수정] ROH 제거, HAWA 추가
+  { key: 'MTART', label: '자재유형', tab: 'basic', type: 'select', required: true, options: {'FERT':'FERT (완제품)', 'ZSET':'ZSET (세트)', 'HAWA':'HAWA (상품)'} },
   { key: 'MAKTX', label: '자재내역', tab: 'basic', type: 'text', required: true, placeholder: '예: 푸디버디 빨강라면 컵' },
   { key: 'MATNR', label: '자재코드', tab: 'basic', type: 'text', adminOnly: true, placeholder: '자동 채번' },
   { key: 'MEINS', label: '기본단위', tab: 'basic', type: 'text', required: true, defaultValue: 'EA' },
@@ -59,7 +59,7 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'DWERK', label: '납품플랜트', tab: 'sales', type: 'text' },
   { key: 'MSTDV', label: '유통상태시작일', tab: 'sales', type: 'date' },
 
-  // [Tab 4] 구매 (신규 추가)
+  // [Tab 4] 구매
   { key: 'EKGRP', label: '구매그룹', tab: 'purchase', type: 'text' },
   { key: 'XCHPF', label: '배치관리', tab: 'purchase', type: 'text', defaultValue: 'X', fixed: true },
 
@@ -84,19 +84,20 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'MHDRZ', label: '최소잔존수명', tab: 'storage', type: 'number', required: true },
   { key: 'MHDHB', label: '총셸프라이프', tab: 'storage', type: 'number', required: true },
 
-  // [Tab 8] 회계
+  // [Tab 8] 회계 (고정값 반영)
+  // ✅ 평가클래스는 Form 컴포넌트에서 로직으로 제어하지만 초기값은 7920
   { key: 'BKLAS', label: '평가클래스', tab: 'finance', type: 'text', defaultValue: '7920', fixed: true },
-  { key: 'VPRSV', label: '가격결정', tab: 'finance', type: 'text', defaultValue: '3', fixed: true },
-  { key: 'PEINH_1', label: '가격단위', tab: 'finance', type: 'number', defaultValue: 1, fixed: true },
+  { key: 'VPRSV', label: '가격결정', tab: 'finance', type: 'text', defaultValue: '3', fixed: true }, // ✅ 고정값 3
+  { key: 'PEINH_1', label: '가격단위', tab: 'finance', type: 'number', defaultValue: 1, fixed: true }, // ✅ 고정값 1
 
-  // [Tab 9] 원가
-  { key: 'EKALR', label: '가격구조(QS)', tab: 'cost', type: 'text', defaultValue: 'X', fixed: true },
-  { key: 'PRCTR', label: '손익센터', tab: 'cost', type: 'text', defaultValue: '100000', fixed: true },
-  { key: 'LOSGR', label: '원가계산로트', tab: 'cost', type: 'number', defaultValue: 10000, fixed: true },
+  // [Tab 9] 원가 (고정값 반영)
+  { key: 'EKALR', label: '가격구조(QS)', tab: 'cost', type: 'text', defaultValue: 'X', fixed: true }, // ✅ 고정값 X
+  { key: 'PRCTR', label: '손익센터', tab: 'cost', type: 'text', defaultValue: '100000', fixed: true }, // ✅ 고정값 100000
+  { key: 'LOSGR', label: '원가계산로트', tab: 'cost', type: 'number', defaultValue: 10000, fixed: true }, // ✅ 고정값 10000
 
-  // [Tab 10] 분류
-  { key: 'KLART', label: '클래스유형', tab: 'class', type: 'text', defaultValue: '001', fixed: true },
-  { key: 'CLASS', label: '클래스', tab: 'class', type: 'text', defaultValue: 'ZMM001', fixed: true },
+  // [Tab 10] 분류 (고정값 반영)
+  { key: 'KLART', label: '클래스유형', tab: 'class', type: 'text', defaultValue: '001', fixed: true }, // ✅ 고정값 001
+  { key: 'CLASS', label: '클래스', tab: 'class', type: 'text', defaultValue: 'ZMM001', fixed: true }, // ✅ 고정값 ZMM001
   { key: 'MWERT_11', label: 'QM 숙성시간', tab: 'class', type: 'text', required: true },
   { key: 'MWERT_12', label: 'Box 가로', tab: 'class', type: 'text', required: true },
   { key: 'MWERT_13', label: 'Box 세로', tab: 'class', type: 'text', required: true },

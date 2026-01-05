@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { 
-  Box, Save, MessageSquare, Send, User, AlertTriangle
+  Save, MessageSquare, Send, AlertTriangle, 
+  CheckCircle, XCircle, PlayCircle, Lock
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -25,10 +26,13 @@ import { HierarchySelector } from "./HierarchySelector"
 import { MOCK_MAT_GROUP, MOCK_REF_DATA } from "@/lib/mock-data"
 
 export function MDMForm() {
-  const { addRequest, updateRequest, currentRequest, addComment } = useMDMStore()
+  const { 
+    addRequest, updateRequest, currentRequest, addComment, 
+    updateStatus, updateSapCode, currentUser, toggleUserMode 
+  } = useMDMStore()
+  
   const [commentInput, setCommentInput] = useState("")
 
-  // ✅ 스키마에서 기본값(Default Value) 추출 함수
   const generateDefaultValues = () => {
     const defaults: any = {};
     MDM_FORM_SCHEMA.forEach(field => {
@@ -43,7 +47,18 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
-  // ✅ 리스트 선택 시 데이터 리셋
+  // ✅ [로직 추가] 자재유형(MTART) 감시 및 평가클래스(BKLAS) 자동 변경
+  const mtart = form.watch("MTART");
+
+  useEffect(() => {
+    if (mtart === 'HAWA') {
+      form.setValue('BKLAS', '3100'); // 상품이면 3100
+    } else if (mtart) {
+      form.setValue('BKLAS', '7920'); // 그 외(FERT, ZSET)는 7920
+    }
+  }, [mtart, form]);
+
+  // 리스트 선택 시 데이터 리셋
   useEffect(() => {
     if (currentRequest) {
       form.reset(currentRequest.data);
@@ -71,7 +86,7 @@ export function MDMForm() {
 
   const handleSendComment = () => {
     if (!commentInput.trim() || !currentRequest) return;
-    addComment(currentRequest.id, commentInput, "나(Me)");
+    addComment(currentRequest.id, commentInput, currentUser.name);
     setCommentInput("");
   }
 
@@ -84,9 +99,60 @@ export function MDMForm() {
     alert("요청사항이 메시지에 등록되었습니다.");
   }
 
+  // --- 관리자 액션 핸들러 ---
+  const handleStartReview = () => {
+    if (!currentRequest) return;
+    if (confirm("검토를 시작하시겠습니까? 상태가 '진행(Review)'로 변경됩니다.")) {
+      updateStatus(currentRequest.id, 'Review');
+      addComment(currentRequest.id, "관리자가 검토를 시작했습니다.", "System");
+    }
+  }
+
+  const handleReject = () => {
+    if (!currentRequest) return;
+    const reason = prompt("반려 사유를 입력해주세요:");
+    if (reason) {
+      updateStatus(currentRequest.id, 'Reject');
+      addComment(currentRequest.id, `🚫 반려됨: ${reason}`, "System");
+    }
+  }
+
+  const handleApprove = () => {
+    if (!currentRequest) return;
+    const matnrValue = form.getValues("MATNR");
+    
+    if (!matnrValue) {
+        alert("최종 승인을 위해서는 '자재코드(MATNR)' 입력이 필요합니다.\n기본정보 탭에서 자재코드를 입력해주세요.");
+        return;
+    }
+
+    if (confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까?`)) {
+      updateSapCode(currentRequest.id, matnrValue);
+      addComment(currentRequest.id, `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`, "System");
+    }
+  }
+
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
     const readOnlyStyle = field.fixed ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
+
+    if (field.key === 'MATNR') {
+        const isEditable = currentUser.isAdmin && currentRequest?.status === 'Review';
+        return (
+            <FormControl>
+                <div className="flex gap-2">
+                    <Input 
+                        {...fieldProps} 
+                        value={fieldProps.value || ''}
+                        placeholder={isEditable ? "SAP 코드 입력" : "채번 대기중"}
+                        readOnly={!isEditable}
+                        className={`h-9 text-sm ${isEditable ? "bg-white border-indigo-300 ring-2 ring-indigo-100" : "bg-slate-100 text-slate-400"}`}
+                    />
+                    {!isEditable && <Lock size={14} className="text-slate-400 self-center shrink-0"/>}
+                </div>
+            </FormControl>
+        )
+    }
 
     if (field.type === 'custom_prdha') {
       return (
@@ -172,17 +238,52 @@ export function MDMForm() {
   return (
     <div className="flex h-full bg-slate-50/50">
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="h-14 border-b bg-white px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <h2 className="font-bold text-lg text-slate-800">
-              {currentRequest ? '상세 정보' : '신규 요청'}
-            </h2>
-            {currentRequest && <span className="text-xs text-slate-400">| {currentRequest.id}</span>}
+        <div className="h-16 border-b bg-white px-6 flex items-center justify-between shrink-0">
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-lg text-slate-800">
+                {currentRequest ? '상세 정보' : '신규 요청'}
+              </h2>
+              <span 
+                  onClick={toggleUserMode} 
+                  className={`text-[10px] px-2 py-0.5 rounded cursor-pointer select-none border transition-colors ${currentUser.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+              >
+                  {currentUser.isAdmin ? '👑 관리자 모드' : '👤 사용자 모드'}
+              </span>
+            </div>
+            {currentRequest && (
+                <span className="text-xs text-slate-400 font-mono">
+                    {currentRequest.id} | <span className={currentRequest.status === 'Approved' ? 'text-green-600 font-bold' : ''}>{currentRequest.status}</span>
+                </span>
+            )}
           </div>
+
           <div className="flex gap-2">
-            <Button onClick={form.handleSubmit(onSubmit)} className="bg-indigo-600 hover:bg-indigo-700 h-8 text-xs gap-1">
-              <Save size={14} /> {currentRequest ? '수정 저장' : '요청 저장'}
-            </Button>
+            {(!currentRequest || (currentRequest.requesterName === currentUser.name && currentRequest.status === 'Requested') || currentUser.isAdmin) && (
+                <Button onClick={form.handleSubmit(onSubmit)} variant="outline" className="h-9 text-xs gap-1">
+                  <Save size={14} /> 저장
+                </Button>
+            )}
+
+            {currentUser.isAdmin && currentRequest && (
+                <>
+                    {currentRequest.status === 'Requested' && (
+                        <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-9 text-xs gap-1 text-white">
+                            <PlayCircle size={14} /> 검토 시작
+                        </Button>
+                    )}
+                    {currentRequest.status === 'Review' && (
+                        <>
+                            <Button onClick={handleReject} variant="destructive" className="h-9 text-xs gap-1">
+                                <XCircle size={14} /> 반려
+                            </Button>
+                            <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700 h-9 text-xs gap-1 text-white">
+                                <CheckCircle size={14} /> 승인 & 채번
+                            </Button>
+                        </>
+                    )}
+                </>
+            )}
           </div>
         </div>
 
@@ -210,7 +311,6 @@ export function MDMForm() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
                         {MDM_FORM_SCHEMA.filter(f => f.tab === tab.id).map((field) => (
                           <div key={field.key} className={field.type === 'custom_prdha' ? 'col-span-full' : ''}>
-                            {/* 🔥 [여기가 에러 수정된 부분] as string 추가됨 🔥 */}
                             <FormField
                               control={form.control}
                               name={field.key as string}
@@ -238,7 +338,7 @@ export function MDMForm() {
       </div>
 
       <div className="w-[320px] border-l border-slate-200 bg-white flex flex-col shrink-0">
-        <div className="h-14 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
+        <div className="h-16 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
             <MessageSquare size={16}/> 메시지 히스토리
           </h3>
@@ -252,7 +352,7 @@ export function MDMForm() {
               <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div>
             ) : (
               currentRequest.comments.map((cmt, idx) => (
-                <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === '나(Me)' ? 'items-end' : 'items-start'}`}>
+                <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser.name ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-1 text-[10px] text-slate-400">
                     <span className="font-bold text-slate-600">{cmt.writer}</span>
                     <span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
@@ -260,7 +360,7 @@ export function MDMForm() {
                   <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${
                     cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' :
                     cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' :
-                    cmt.writer === '나(Me)' ? 'bg-indigo-600 text-white rounded-tr-none' : 
+                    cmt.writer === currentUser.name ? 'bg-indigo-600 text-white rounded-tr-none' : 
                     'bg-white border border-slate-200 text-slate-700 rounded-tl-none'
                   }`}>
                     {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}
