@@ -2,12 +2,11 @@
 
 import { useState } from "react"
 import { useMDMStore } from "@/stores/useMDMStore"
-import { RequestStatus } from "@/types/mdm"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Download, Plus, Search, FileText, Filter } from "lucide-react"
+import { Download, Plus, Search, FileText } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import {
   Tooltip,
@@ -16,13 +15,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-// ✅ 상태별 디자인 정의 (한 글자 뱃지 + 색상)
+// 상태별 디자인 정의
 const STATUS_CONFIG: Record<string, { char: string; label: string; color: string; bg: string }> = {
   Requested: { char: '요', label: '요청 (Requested)', color: 'text-indigo-600', bg: 'bg-indigo-100' },
   Review:    { char: '진', label: '진행 (Review)',    color: 'text-orange-600', bg: 'bg-orange-100' },
   Approved:  { char: '완', label: '완료 (Approved)',  color: 'text-green-600',  bg: 'bg-green-100' },
   Reject:    { char: '거', label: '거절 (Reject)',    color: 'text-red-600',    bg: 'bg-red-100' },
-  // Pending 상태가 있다면 추가 가능: { char: '보', label: '보완 (Pending)', color: 'text-yellow-600', bg: 'bg-yellow-100' }
 }
 
 export function RequestTable() {
@@ -33,8 +31,9 @@ export function RequestTable() {
   
   const [searchTerm, setSearchTerm] = useState("")
 
+  // ✅ [수정완료] 여기서 에러가 났었습니다. (req.data.MAKTX || "") 처럼 안전장치 추가!
   const filteredRequests = requests.filter(req => 
-    req.data.MAKTX.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (req.data.MAKTX || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -48,7 +47,6 @@ export function RequestTable() {
       {/* 1. 상단 툴바 */}
       <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50/50">
         
-        {/* 타이틀 & 신규 버튼 */}
         <div className="flex justify-between items-center">
           <h2 className="font-bold text-base text-slate-800 flex items-center gap-2">
             📋 요청 목록 <span className="text-slate-400 text-xs font-normal">({filteredRequests.length})</span>
@@ -62,7 +60,6 @@ export function RequestTable() {
           </Button>
         </div>
 
-        {/* 검색창 */}
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
           <Input 
@@ -73,7 +70,6 @@ export function RequestTable() {
           />
         </div>
 
-        {/* ✅ [신규] 상태 범례 (Legend) 표시 */}
         <div className="flex gap-2 justify-start items-center pt-1 overflow-x-auto no-scrollbar">
           {Object.values(STATUS_CONFIG).map((conf) => (
             <div key={conf.char} className="flex items-center gap-1">
@@ -85,7 +81,6 @@ export function RequestTable() {
           ))}
         </div>
 
-        {/* 다운로드 버튼 (선택 시 등장) */}
         {selectedIds.length > 0 && (
           <div className="flex items-center justify-between bg-green-50 p-2 rounded-lg border border-green-200 animate-in fade-in slide-in-from-top-1">
             <span className="text-xs font-bold text-green-700 ml-1">{selectedIds.length}건 선택됨</span>
@@ -114,7 +109,7 @@ export function RequestTable() {
         <div className="w-[30px] text-center">상태</div>
       </div>
 
-      {/* 3. 리스트 목록 (스크롤) */}
+      {/* 3. 리스트 목록 */}
       <ScrollArea className="flex-1 bg-white">
         <div className="divide-y divide-slate-100">
           {filteredRequests.map((req) => {
@@ -130,7 +125,6 @@ export function RequestTable() {
                 `}
                 onClick={() => setCurrentRequest(req)}
               >
-                {/* 체크박스 */}
                 <div className="w-[30px] flex justify-center pt-0.5" onClick={(e) => e.stopPropagation()}>
                   <Checkbox 
                     checked={selectedIds.includes(req.id)}
@@ -139,7 +133,6 @@ export function RequestTable() {
                   />
                 </div>
 
-                {/* 내용 영역 */}
                 <div className="flex-1 ml-3 min-w-0 flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-mono text-slate-400">{req.id}</span>
@@ -158,11 +151,10 @@ export function RequestTable() {
                   </div>
                 </div>
 
-                {/* ✅ [개선] 한 글자 상태 뱃지 (우측) */}
                 <div className="w-[30px] flex justify-center items-start pt-0.5">
                   <TooltipProvider>
                     <Tooltip>
-                      <TooltipTrigger>
+                      <TooltipTrigger asChild>
                         <div className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold border ${statusConf.bg} ${statusConf.color} border-transparent shadow-sm`}>
                           {statusConf.char}
                         </div>
