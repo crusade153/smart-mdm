@@ -91,11 +91,14 @@ export function MDMForm() {
     }
   }
 
-  const handleSendComment = () => {
-    if (!commentInput.trim() || !currentRequest) return;
-    addComment(currentRequest.id, commentInput, currentUser.name);
-    setCommentInput("");
-  }
+const handleSendComment = () => {
+  // currentUser가 없으면(null이면) 함수 실행을 멈추도록 조건 추가 (!currentUser)
+  if (!commentInput.trim() || !currentRequest || !currentUser) return; 
+  
+  // 위에서 null 체크를 했으므로, 여기서는 currentUser가 안전하다고 판단함
+  addComment(currentRequest.id, commentInput, currentUser.name);
+  setCommentInput("");
+}
 
   const handleHierarchyRequest = (msg: string) => {
     if (!currentRequest) {
