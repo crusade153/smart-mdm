@@ -64,7 +64,6 @@ export function MDMForm() {
 
     if (currentRequest) {
       // 2. 고정값(defaults) 위에 저장된 데이터(currentRequest.data)를 덮어씌움
-      // 이렇게 하면 저장된 데이터에 해당 필드가 없더라도 고정값이 유지됨
       form.reset({
         ...defaults,
         ...currentRequest.data
@@ -91,14 +90,12 @@ export function MDMForm() {
     }
   }
 
-const handleSendComment = () => {
-  // currentUser가 없으면(null이면) 함수 실행을 멈추도록 조건 추가 (!currentUser)
-  if (!commentInput.trim() || !currentRequest || !currentUser) return; 
-  
-  // 위에서 null 체크를 했으므로, 여기서는 currentUser가 안전하다고 판단함
-  addComment(currentRequest.id, commentInput, currentUser.name);
-  setCommentInput("");
-}
+  const handleSendComment = () => {
+    // ✅ [수정] currentUser가 없으면 리턴 (빌드 에러 방지)
+    if (!commentInput.trim() || !currentRequest || !currentUser) return;
+    addComment(currentRequest.id, commentInput, currentUser.name);
+    setCommentInput("");
+  }
 
   const handleHierarchyRequest = (msg: string) => {
     if (!currentRequest) {
@@ -147,7 +144,8 @@ const handleSendComment = () => {
     const readOnlyStyle = field.fixed ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
 
     if (field.key === 'MATNR') {
-        const isEditable = currentUser.isAdmin && currentRequest?.status === 'Review';
+        // ✅ [수정] currentUser?.isAdmin (옵셔널 체이닝 추가)
+        const isEditable = currentUser?.isAdmin && currentRequest?.status === 'Review';
         return (
             <FormControl>
                 <div className="flex gap-2">
@@ -256,9 +254,10 @@ const handleSendComment = () => {
               </h2>
               <span 
                   onClick={toggleUserMode} 
-                  className={`text-[10px] px-2 py-0.5 rounded cursor-pointer select-none border transition-colors ${currentUser.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                  // ✅ [수정] currentUser?.isAdmin
+                  className={`text-[10px] px-2 py-0.5 rounded cursor-pointer select-none border transition-colors ${currentUser?.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
               >
-                  {currentUser.isAdmin ? '👑 관리자 모드' : '👤 사용자 모드'}
+                  {currentUser?.isAdmin ? '👑 관리자 모드' : '👤 사용자 모드'}
               </span>
             </div>
             {currentRequest && (
@@ -269,13 +268,15 @@ const handleSendComment = () => {
           </div>
 
           <div className="flex gap-2">
-            {(!currentRequest || (currentRequest.requesterName === currentUser.name && currentRequest.status === 'Requested') || currentUser.isAdmin) && (
+            {/* ✅ [수정] currentUser?.name, currentUser?.isAdmin */}
+            {(!currentRequest || (currentRequest.requesterName === currentUser?.name && currentRequest.status === 'Requested') || currentUser?.isAdmin) && (
                 <Button onClick={form.handleSubmit(onSubmit)} variant="outline" className="h-9 text-xs gap-1">
                   <Save size={14} /> 저장
                 </Button>
             )}
 
-            {currentUser.isAdmin && currentRequest && (
+            {/* ✅ [수정] currentUser?.isAdmin */}
+            {currentUser?.isAdmin && currentRequest && (
                 <>
                     {currentRequest.status === 'Requested' && (
                         <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-9 text-xs gap-1 text-white">
@@ -362,7 +363,8 @@ const handleSendComment = () => {
               <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div>
             ) : (
               currentRequest.comments.map((cmt, idx) => (
-                <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser.name ? 'items-end' : 'items-start'}`}>
+                // ✅ [수정] currentUser?.name
+                <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-1 text-[10px] text-slate-400">
                     <span className="font-bold text-slate-600">{cmt.writer}</span>
                     <span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
@@ -370,7 +372,8 @@ const handleSendComment = () => {
                   <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${
                     cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' :
                     cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' :
-                    cmt.writer === currentUser.name ? 'bg-indigo-600 text-white rounded-tr-none' : 
+                    // ✅ [수정] currentUser?.name
+                    cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 
                     'bg-white border border-slate-200 text-slate-700 rounded-tl-none'
                   }`}>
                     {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}
