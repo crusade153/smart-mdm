@@ -58,12 +58,19 @@ export function MDMForm() {
     }
   }, [mtart, form]);
 
-  // 리스트 선택 시 데이터 리셋
+  // ✅ [수정] 리스트 선택 시 데이터 리셋 (고정값 유지 로직 적용)
   useEffect(() => {
+    const defaults = generateDefaultValues(); // 1. 스키마에 정의된 고정값들을 먼저 가져옴
+
     if (currentRequest) {
-      form.reset(currentRequest.data);
+      // 2. 고정값(defaults) 위에 저장된 데이터(currentRequest.data)를 덮어씌움
+      // 이렇게 하면 저장된 데이터에 해당 필드가 없더라도 고정값이 유지됨
+      form.reset({
+        ...defaults,
+        ...currentRequest.data
+      });
     } else {
-      form.reset(generateDefaultValues());
+      form.reset(defaults);
     }
   }, [currentRequest, form]);
 
