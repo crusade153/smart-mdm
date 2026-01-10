@@ -1,8 +1,6 @@
-// src/stores/useMDMStore.ts
 import { create } from 'zustand';
 import { MaterialRequest, SapMasterData, RequestStatus } from '@/types/mdm';
 
-// ... (기존 SAP_EXPORT_ORDER, CSV 헤더 상수들은 그대로 유지)
 const SAP_EXPORT_ORDER = [
   "WERKS","MTART","MBRSH","MATNR","MAKTX","MEINS","MATKL","EXTWG","BISMT","SPART",
   "LABOR","MSTAE","MSTDE","MAGRV","PRDHA","MTPOS_MARA","BRGEW","NTGEW","GEWEI","GROES",
@@ -37,13 +35,15 @@ interface MDMState {
   requests: MaterialRequest[];
   currentRequest: MaterialRequest | null;
   selectedIds: string[];
-  
-  // ✅ 인증 관련 상태 추가
   isLoggedIn: boolean;
   currentUser: UserInfo | null;
 
-  login: (id: string, pw: string) => boolean;
+  setLoginUser: (user: UserInfo) => void;
   logout: () => void;
+  
+  // DB 데이터 동기화용 액션
+  setRequests: (requests: MaterialRequest[]) => void;
+  setComments: (requestId: string, comments: any[]) => void;
 
   addRequest: (data: SapMasterData) => void;
   updateRequest: (id: string, data: Partial<SapMasterData>) => void;
@@ -58,51 +58,24 @@ interface MDMState {
   toggleUserMode: () => void; 
 }
 
-const generateDummyData = () => {
-  return Array.from({ length: 15 }).map((_, i) => ({
-    id: `REQ-${20250000 + i}`,
-    status: i % 5 === 0 ? 'Approved' : i % 3 === 0 ? 'Review' : 'Requested',
-    requesterName: i % 2 === 0 ? '김담당' : '이대리',
-    createdAt: new Date(2025, 0, i + 1).toISOString(),
-    data: { 
-      WERKS: '1021', MTART: 'FERT', 
-      MAKTX: `테스트 자재 품명 ${i + 1}`, 
-      MATNR: i % 5 === 0 ? `50000${i}` : '', 
-      MEINS: 'EA', MATKL: '1001', PRDHA: '01010101', 
-      SPART: '00', NTGEW: 100 + i, GEWEI: 'G' 
-    } as SapMasterData,
-    comments: []
-  } as MaterialRequest));
-};
-
 export const useMDMStore = create<MDMState>((set, get) => ({
-  requests: generateDummyData(),
+  requests: [], // DB에서 불러오기 위해 초기값은 빈 배열
   currentRequest: null,
   selectedIds: [],
-  
-  // 초기 상태: 비로그인
   isLoggedIn: false,
   currentUser: null,
 
-  // ✅ 하드코딩된 로그인 로직
-  login: (id, pw) => {
-    if (id === 'ykd00' && pw === '1234') {
-      set({
-        isLoggedIn: true,
-        currentUser: {
-          id: 'crusad153',
-          name: '유경덕',
-          email: 'yukd2022@harim-foods.com',
-          isAdmin: true
-        }
-      });
-      return true;
-    }
-    return false;
-  },
-
+  setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
   logout: () => set({ isLoggedIn: false, currentUser: null }),
 
+  // DB 데이터 적용
+  setRequests: (requests) => set({ requests }),
+  setComments: (requestId, comments) => set((state) => ({
+    requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
+    currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
+  })),
+
+  // 로컬 상태 업데이트 (Optimistic UI)
   addRequest: (data) => set((state) => ({
     requests: [{
       id: `REQ-${Date.now()}`,
@@ -146,28 +119,20 @@ export const useMDMStore = create<MDMState>((set, get) => ({
   })),
 
   setCurrentRequest: (request) => set({ currentRequest: request }),
-
   createNewRequest: () => set({ currentRequest: null }),
-
   toggleSelection: (id) => set((state) => ({
-    selectedIds: state.selectedIds.includes(id)
-      ? state.selectedIds.filter(sid => sid !== id)
-      : [...state.selectedIds, id]
+    selectedIds: state.selectedIds.includes(id) ? state.selectedIds.filter(sid => sid !== id) : [...state.selectedIds, id]
   })),
-
   toggleAllSelection: (ids) => set({ selectedIds: ids }),
 
   downloadSelectedCsv: () => {
     const { requests, selectedIds } = get();
     const targets = requests.filter(r => selectedIds.includes(r.id));
-
     if (targets.length === 0) {
       alert("다운로드할 항목을 선택해주세요.");
       return;
     }
-
     const headerRow3 = SAP_EXPORT_ORDER.join(',');
-    
     const rows = targets.map(req => {
       return SAP_EXPORT_ORDER.map(col => {
         if (col === 'CLASS') return '"ZMM001"';
@@ -181,10 +146,8 @@ export const useMDMStore = create<MDMState>((set, get) => ({
         return `"${String(val).replace(/"/g, '""')}"`;
       }).join(',');
     });
-
     const csvContent = [CSV_HEADER_ROW_1, CSV_HEADER_ROW_2, headerRow3, ...rows].join('\n');
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `SAP_Upload_${new Date().toISOString().slice(0,19).replace(/:/g,'')}.csv`;
@@ -192,9 +155,6 @@ export const useMDMStore = create<MDMState>((set, get) => ({
   },
 
   toggleUserMode: () => set((state) => ({
-    currentUser: state.currentUser ? {
-      ...state.currentUser,
-      isAdmin: !state.currentUser.isAdmin
-    } : null
+    currentUser: state.currentUser ? { ...state.currentUser, isAdmin: !state.currentUser.isAdmin } : null
   })),
 }));
