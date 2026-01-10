@@ -35,6 +35,7 @@ export async function getRequestsAction() {
     const rows = await sheet.getRows();
     const sortedRows = rows.reverse(); 
 
+    // 헤더 값 가져오기
     const headers = sheet.headerValues; 
 
     const requests = sortedRows.map(row => {
@@ -105,7 +106,7 @@ export async function getCommentsAction(requestId: string) {
   }
 }
 
-// ✅ [NEW] 5. 요청 수정 (Update)
+// 5. 요청 수정
 export async function updateRequestAction(requestId: string, data: SapMasterData) {
   try {
     const sheet = await getSheetByTitle('requests');
@@ -114,12 +115,11 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
 
     if (!row) return { success: false, message: "요청을 찾을 수 없습니다." };
 
-    // 데이터 업데이트
     Object.entries(data).forEach(([key, value]) => {
         row.set(key, value);
     });
     
-    await row.save(); // 변경사항 저장
+    await row.save(); 
     return { success: true, message: "수정되었습니다." };
   } catch (error: any) {
     console.error("Update Error:", error);
@@ -127,7 +127,7 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
   }
 }
 
-// ✅ [NEW] 6. 요청 삭제 (Delete)
+// 6. 요청 삭제
 export async function deleteRequestAction(requestId: string) {
   try {
     const sheet = await getSheetByTitle('requests');
@@ -136,10 +136,34 @@ export async function deleteRequestAction(requestId: string) {
 
     if (!row) return { success: false, message: "요청을 찾을 수 없습니다." };
 
-    await row.delete(); // 행 삭제
+    await row.delete(); 
     return { success: true, message: "삭제되었습니다." };
   } catch (error: any) {
     console.error("Delete Error:", error);
     return { success: false, message: "삭제 중 오류: " + error.message };
+  }
+}
+
+// ✅ [NEW] 7. 요청 상태 변경 (Status Update) - 이 함수가 꼭 있어야 합니다!
+export async function updateStatusAction(requestId: string, status: string) {
+  try {
+    const sheet = await getSheetByTitle('requests');
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === requestId);
+
+    if (!row) return { success: false, message: "요청을 찾을 수 없습니다." };
+
+    row.set('status', status);
+    
+    if (status === 'Approved') {
+        row.set('completed_at', new Date().toISOString());
+    }
+    
+    await row.save(); 
+    return { success: true, message: "상태가 변경되었습니다." };
+
+  } catch (error: any) {
+    console.error("Status Update Error:", error);
+    return { success: false, message: "상태 변경 중 오류: " + error.message };
   }
 }

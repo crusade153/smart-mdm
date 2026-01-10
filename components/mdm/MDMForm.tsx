@@ -29,8 +29,9 @@ import {
   createCommentAction, 
   getCommentsAction, 
   getRequestsAction,
-  updateRequestAction, // 추가됨
-  deleteRequestAction  // 추가됨
+  updateRequestAction, 
+  deleteRequestAction,
+  updateStatusAction // 👈 [NEW] 여기에 반드시 추가되어야 에러가 안 납니다!
 } from "@/actions/mdm"
 
 export function MDMForm() {
@@ -41,15 +42,19 @@ export function MDMForm() {
   
   const [commentInput, setCommentInput] = useState("")
 
-  // ✅ 권한 체크 로직 (여기서 한 번에 관리)
+  // 권한 체크
   const isOwner = currentRequest?.requesterName === currentUser?.name;
   const isAdmin = currentUser?.isAdmin;
   const isRequestedStatus = currentRequest?.status === 'Requested';
+  const isReviewStatus = currentRequest?.status === 'Review'; 
 
-  // 수정 가능 여부: (신규 작성) OR (관리자) OR (작성자 && 요청상태)
-  const canEdit = !currentRequest || isAdmin || (isOwner && isRequestedStatus);
+  // 수정 가능 여부
+  const canEdit = !currentRequest || (isOwner && isRequestedStatus) || isAdmin;
   
-  // 삭제 가능 여부: (존재하는 글) AND ((관리자) OR (작성자))
+  // 제품코드 입력 가능 여부
+  const canEditSapCode = isAdmin && isReviewStatus;
+
+  // 삭제 가능 여부
   const canDelete = currentRequest && (isAdmin || isOwner);
 
   const generateDefaultValues = () => {
@@ -77,6 +82,9 @@ export function MDMForm() {
         setCurrentRequest(updatedRequest);
         const comments = await getCommentsAction(targetId);
         setComments(targetId, comments);
+        
+        // 폼 데이터도 최신 상태로 리셋 (제품코드 입력 후 반영을 위해 중요)
+        form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
       }
     }
   };
@@ -100,13 +108,12 @@ export function MDMForm() {
     }
   }, [currentRequest?.id, form, setComments]);
 
-  // ✅ 저장(수정/신규) 핸들러
+  // 저장 핸들러
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     let targetId = currentRequest?.id;
 
     if (!currentRequest) {
-      // 신규 저장
       if (!confirm("요청을 등록하시겠습니까?")) return;
       const result = await createRequestAction(data, currentUser?.name || 'Unknown');
       if (result.success && result.id) {
@@ -118,7 +125,7 @@ export function MDMForm() {
         return;
       }
     } else {
-      // ✅ 수정 저장 (서버 액션 연결)
+      // 수정 저장
       const result = await updateRequestAction(currentRequest.id, data);
       if (result.success) {
         alert(result.message);
@@ -135,16 +142,15 @@ export function MDMForm() {
     }
   }
 
-  // ✅ 삭제 핸들러
   const handleDelete = async () => {
     if (!currentRequest) return;
-    if (!confirm("정말 이 요청을 삭제하시겠습니까? (복구할 수 없습니다)")) return;
+    if (!confirm("정말 이 요청을 삭제하시겠습니까?")) return;
 
     const result = await deleteRequestAction(currentRequest.id);
     if (result.success) {
         alert(result.message);
-        createNewRequest(); // 선택 해제
-        const latestRequests = await getRequestsAction(); // 목록 갱신
+        createNewRequest(); 
+        const latestRequests = await getRequestsAction(); 
         setRequests(latestRequests);
     } else {
         alert(result.message);
@@ -178,64 +184,104 @@ export function MDMForm() {
     await refreshData(reqId);
   }
 
+  // ✅ 검토 시작 핸들러 (서버 액션 호출)
   const handleStartReview = async () => {
     if (!currentRequest) return;
-    if (confirm("검토를 시작하시겠습니까?")) {
-      updateStatus(currentRequest.id, 'Review'); // (로컬)
-      // 실제로는 updateRequestAction 호출 등으로 상태값 변경 필요 (현재는 UI만)
+    if (!confirm("검토를 시작하시겠습니까? 상태가 '진행(Review)'로 변경됩니다.")) return;
+
+    const result = await updateStatusAction(currentRequest.id, 'Review');
+    
+    if(result.success) {
       const msg = "관리자가 검토를 시작했습니다.";
       await createCommentAction(currentRequest.id, msg, "System");
       await refreshData(currentRequest.id);
+      alert("검토 상태로 변경되었습니다.");
+    } else {
+      alert("상태 변경 실패: " + result.message);
     }
   }
+
+  // ✅ 반려 핸들러 (서버 액션 호출)
   const handleReject = async () => {
     if (!currentRequest) return;
-    const reason = prompt("반려 사유:");
-    if (reason) {
-      updateStatus(currentRequest.id, 'Reject');
+    const reason = prompt("반려 사유를 입력해주세요:");
+    if (!reason) return;
+
+    const result = await updateStatusAction(currentRequest.id, 'Reject');
+
+    if(result.success) {
       const msg = `🚫 반려됨: ${reason}`;
       await createCommentAction(currentRequest.id, msg, "System");
       await refreshData(currentRequest.id);
+      alert("반려 처리되었습니다.");
+    } else {
+       alert("반려 처리 실패: " + result.message);
     }
   }
+
+  // ✅ 승인(완료) 핸들러 (서버 액션 호출)
   const handleApprove = async () => {
     if (!currentRequest) return;
+    
     const matnrValue = form.getValues("MATNR");
     if (!matnrValue) {
-        alert("자재코드(MATNR) 입력이 필요합니다.");
+        alert("최종 승인을 위해서는 '자재코드(MATNR)' 입력이 필요합니다.\n기본정보 탭에서 자재코드를 입력해주세요.");
         return;
     }
-    if (confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까?`)) {
-      updateSapCode(currentRequest.id, matnrValue);
+
+    if (!confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까? 상태가 '완료(Approved)'로 변경됩니다.`)) return;
+
+    // 1. 자재코드 저장
+    const dataUpdateResult = await updateRequestAction(currentRequest.id, { ...currentRequest.data, MATNR: matnrValue });
+    if (!dataUpdateResult.success) {
+        alert("자재코드 저장 중 오류 발생");
+        return;
+    }
+
+    // 2. 상태값 변경 (Approved)
+    const statusUpdateResult = await updateStatusAction(currentRequest.id, 'Approved');
+
+    if (statusUpdateResult.success) {
       const msg = `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`;
       await createCommentAction(currentRequest.id, msg, "System");
       await refreshData(currentRequest.id);
+      alert("최종 승인(완료) 처리되었습니다.");
+    } else {
+      alert("승인 처리 실패: " + statusUpdateResult.message);
     }
   }
 
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
-    // ✅ 권한이 없으면(canEdit=false) 무조건 회색 처리
-    const readOnlyStyle = (field.fixed || !canEdit) ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
-    // ✅ 권한이 없으면 입력 불가 (readOnly)
-    const isDisabled = field.fixed || !canEdit;
+    
+    let isReadOnly = field.fixed || !canEdit;
+    
+    if (field.key === 'MATNR') {
+        isReadOnly = !canEditSapCode; 
+    }
+
+    const readOnlyStyle = isReadOnly ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
 
     if (field.key === 'MATNR') {
-        const isEditable = currentUser?.isAdmin && currentRequest?.status === 'Review';
         return (
             <FormControl>
                 <div className="flex gap-2">
-                    <Input {...fieldProps} value={fieldProps.value || ''} placeholder={isEditable ? "SAP 코드 입력" : "채번 대기중"} readOnly={!isEditable} className={`h-9 text-sm ${isEditable ? "bg-white border-indigo-300 ring-2 ring-indigo-100" : "bg-slate-100 text-slate-400"}`} />
-                    {!isEditable && <Lock size={14} className="text-slate-400 self-center shrink-0"/>}
+                    <Input 
+                        {...fieldProps} 
+                        value={fieldProps.value || ''}
+                        placeholder={canEditSapCode ? "SAP 코드 입력" : "채번 대기중"}
+                        readOnly={isReadOnly}
+                        className={`h-9 text-sm ${canEditSapCode ? "bg-white border-indigo-300 ring-2 ring-indigo-100 font-bold text-indigo-700" : "bg-slate-100 text-slate-400"}`}
+                    />
+                    {isReadOnly && <Lock size={14} className="text-slate-400 self-center shrink-0"/>}
                 </div>
             </FormControl>
         )
     }
     if (field.type === 'custom_prdha') {
-        // 커스텀 컴포넌트는 disabled prop 처리 필요 (HierarchySelector 수정 필요할 수 있음)
         return ( 
             <FormControl> 
-                <div className={isDisabled ? "pointer-events-none opacity-60" : ""}>
+                <div className={isReadOnly ? "pointer-events-none opacity-60" : ""}>
                     <HierarchySelector value={fieldProps.value} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /> 
                 </div>
             </FormControl> 
@@ -243,7 +289,7 @@ export function MDMForm() {
     }
     if (field.type === 'select' && field.options) {
       return (
-        <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isDisabled}>
+        <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
           <FormControl>
             <SelectTrigger className={`h-9 text-sm ${readOnlyStyle}`}>
               <SelectValue placeholder="선택" />
@@ -260,7 +306,7 @@ export function MDMForm() {
     if (field.type === 'ref_select' && field.refKey) {
         const list = (MOCK_REF_DATA as any)[field.refKey] || [];
         return (
-          <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isDisabled}>
+          <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
             <FormControl>
               <SelectTrigger className={`h-9 text-sm ${readOnlyStyle}`}>
                 <SelectValue placeholder="선택" />
@@ -276,7 +322,7 @@ export function MDMForm() {
     }
     if (field.type === 'custom_matkl') {
       return (
-        <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isDisabled}>
+        <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
           <FormControl>
             <SelectTrigger className={`h-9 text-sm ${readOnlyStyle}`}>
               <SelectValue placeholder="선택" />
@@ -297,7 +343,7 @@ export function MDMForm() {
           {...fieldProps} 
           value={fieldProps.value || ''} 
           type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} 
-          readOnly={isDisabled} // ✅ ReadOnly 적용
+          readOnly={isReadOnly} 
           className={`h-9 text-sm ${readOnlyStyle}`} 
         />
       </FormControl>
@@ -319,21 +365,18 @@ export function MDMForm() {
           </div>
 
           <div className="flex gap-2">
-            {/* ✅ 삭제 버튼 (권한 체크: canDelete) */}
             {canDelete && (
                <Button variant="destructive" className="h-9 text-xs gap-1" onClick={handleDelete}>
                  <Trash2 size={14} /> 삭제
                </Button>
             )}
 
-            {/* ✅ 저장 버튼 (권한 체크: canEdit) */}
             {canEdit && (
                 <Button onClick={form.handleSubmit(onSubmit)} variant="outline" className="h-9 text-xs gap-1">
                   <Save size={14} /> 저장
                 </Button>
             )}
 
-            {/* 관리자 버튼들 */}
             {currentUser?.isAdmin && currentRequest && (
                 <>
                     {currentRequest.status === 'Requested' && ( <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-9 text-xs gap-1 text-white"><PlayCircle size={14} /> 검토 시작</Button> )}
@@ -345,7 +388,6 @@ export function MDMForm() {
 
         <div className="flex-1 overflow-hidden">
           <Form {...form}>
-            {/* 탭 및 폼 내용은 기존과 동일하므로 생략 없이 전체 출력합니다 */}
             <Tabs defaultValue="basic" className="flex flex-col h-full">
               <div className="bg-white border-b px-4 shrink-0">
                 <TabsList className="h-10 bg-transparent w-full justify-start p-0 gap-4 overflow-x-auto no-scrollbar">
