@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
-  CheckCircle, XCircle, PlayCircle, Lock, Trash2
+  CheckCircle, XCircle, PlayCircle, Lock, Trash2, History
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -31,16 +31,21 @@ import {
   getRequestsAction,
   updateRequestAction, 
   deleteRequestAction,
-  updateStatusAction // 👈 [NEW] 여기에 반드시 추가되어야 에러가 안 납니다!
+  updateStatusAction 
 } from "@/actions/mdm"
+import { AuditLogDialog } from "./AuditLogDialog" 
 
 export function MDMForm() {
   const { 
-    updateRequest, currentRequest, setCurrentRequest, setRequests, createNewRequest,
-    setComments, updateStatus, updateSapCode, currentUser, toggleUserMode 
+    currentRequest, setCurrentRequest, setRequests, createNewRequest,
+    setComments, currentUser, toggleUserMode 
   } = useMDMStore()
   
   const [commentInput, setCommentInput] = useState("")
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  
+  // ✅ 스크롤 자동 이동을 위한 Ref
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 권한 체크
   const isOwner = currentRequest?.requesterName === currentUser?.name;
@@ -48,13 +53,8 @@ export function MDMForm() {
   const isRequestedStatus = currentRequest?.status === 'Requested';
   const isReviewStatus = currentRequest?.status === 'Review'; 
 
-  // 수정 가능 여부
   const canEdit = !currentRequest || (isOwner && isRequestedStatus) || isAdmin;
-  
-  // 제품코드 입력 가능 여부
   const canEditSapCode = isAdmin && isReviewStatus;
-
-  // 삭제 가능 여부
   const canDelete = currentRequest && (isAdmin || isOwner);
 
   const generateDefaultValues = () => {
@@ -71,6 +71,13 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
+  // ✅ [수정] 메시지가 업데이트될 때 스크롤이 전체 페이지를 내리지 않도록 'nearest' 옵션 사용
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [currentRequest?.comments]);
+
   // 데이터 동기화
   const refreshData = async (targetId?: string) => {
     const latestRequests = await getRequestsAction();
@@ -82,8 +89,6 @@ export function MDMForm() {
         setCurrentRequest(updatedRequest);
         const comments = await getCommentsAction(targetId);
         setComments(targetId, comments);
-        
-        // 폼 데이터도 최신 상태로 리셋 (제품코드 입력 후 반영을 위해 중요)
         form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
       }
     }
@@ -112,10 +117,11 @@ export function MDMForm() {
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     let targetId = currentRequest?.id;
+    const actorName = currentUser?.name || 'Unknown';
 
     if (!currentRequest) {
       if (!confirm("요청을 등록하시겠습니까?")) return;
-      const result = await createRequestAction(data, currentUser?.name || 'Unknown');
+      const result = await createRequestAction(data, actorName);
       if (result.success && result.id) {
         alert(result.message);
         targetId = result.id;
@@ -125,8 +131,7 @@ export function MDMForm() {
         return;
       }
     } else {
-      // 수정 저장
-      const result = await updateRequestAction(currentRequest.id, data);
+      const result = await updateRequestAction(currentRequest.id, data, actorName);
       if (result.success) {
         alert(result.message);
         await refreshData(currentRequest.id);
@@ -184,12 +189,11 @@ export function MDMForm() {
     await refreshData(reqId);
   }
 
-  // ✅ 검토 시작 핸들러 (서버 액션 호출)
   const handleStartReview = async () => {
     if (!currentRequest) return;
     if (!confirm("검토를 시작하시겠습니까? 상태가 '진행(Review)'로 변경됩니다.")) return;
 
-    const result = await updateStatusAction(currentRequest.id, 'Review');
+    const result = await updateStatusAction(currentRequest.id, 'Review', currentUser?.name || 'Admin');
     
     if(result.success) {
       const msg = "관리자가 검토를 시작했습니다.";
@@ -201,13 +205,12 @@ export function MDMForm() {
     }
   }
 
-  // ✅ 반려 핸들러 (서버 액션 호출)
   const handleReject = async () => {
     if (!currentRequest) return;
     const reason = prompt("반려 사유를 입력해주세요:");
     if (!reason) return;
 
-    const result = await updateStatusAction(currentRequest.id, 'Reject');
+    const result = await updateStatusAction(currentRequest.id, 'Reject', currentUser?.name || 'Admin');
 
     if(result.success) {
       const msg = `🚫 반려됨: ${reason}`;
@@ -219,7 +222,6 @@ export function MDMForm() {
     }
   }
 
-  // ✅ 승인(완료) 핸들러 (서버 액션 호출)
   const handleApprove = async () => {
     if (!currentRequest) return;
     
@@ -231,15 +233,15 @@ export function MDMForm() {
 
     if (!confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까? 상태가 '완료(Approved)'로 변경됩니다.`)) return;
 
-    // 1. 자재코드 저장
-    const dataUpdateResult = await updateRequestAction(currentRequest.id, { ...currentRequest.data, MATNR: matnrValue });
+    const actor = currentUser?.name || 'Admin';
+    const dataUpdateResult = await updateRequestAction(currentRequest.id, { ...currentRequest.data, MATNR: matnrValue }, actor);
+    
     if (!dataUpdateResult.success) {
         alert("자재코드 저장 중 오류 발생");
         return;
     }
 
-    // 2. 상태값 변경 (Approved)
-    const statusUpdateResult = await updateStatusAction(currentRequest.id, 'Approved');
+    const statusUpdateResult = await updateStatusAction(currentRequest.id, 'Approved', actor);
 
     if (statusUpdateResult.success) {
       const msg = `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`;
@@ -253,13 +255,8 @@ export function MDMForm() {
 
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
-    
     let isReadOnly = field.fixed || !canEdit;
-    
-    if (field.key === 'MATNR') {
-        isReadOnly = !canEditSapCode; 
-    }
-
+    if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
     const readOnlyStyle = isReadOnly ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
 
     if (field.key === 'MATNR') {
@@ -336,7 +333,6 @@ export function MDMForm() {
         </Select>
       );
     }
-    
     return (
       <FormControl>
         <Input 
@@ -352,6 +348,14 @@ export function MDMForm() {
 
   return (
     <div className="flex h-full bg-slate-50/50">
+      
+      {/* 팝업 컴포넌트 */}
+      <AuditLogDialog 
+        requestId={currentRequest?.id || null} 
+        isOpen={isHistoryOpen} 
+        onClose={() => setIsHistoryOpen(false)} 
+      />
+
       <div className="flex-1 flex flex-col min-w-0">
         <div className="h-16 border-b bg-white px-6 flex items-center justify-between shrink-0">
           <div className="flex flex-col gap-0.5">
@@ -365,6 +369,12 @@ export function MDMForm() {
           </div>
 
           <div className="flex gap-2">
+            {currentRequest && (
+              <Button variant="outline" className="h-9 text-xs gap-1 text-slate-600" onClick={() => setIsHistoryOpen(true)}>
+                <History size={14} /> 이력
+              </Button>
+            )}
+
             {canDelete && (
                <Button variant="destructive" className="h-9 text-xs gap-1" onClick={handleDelete}>
                  <Trash2 size={14} /> 삭제
@@ -430,7 +440,11 @@ export function MDMForm() {
         <div className="h-16 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm"><MessageSquare size={16}/> 메시지 히스토리</h3>
         </div>
-        <ScrollArea className="flex-1 p-4 bg-slate-50/30">
+        {/* ✅ [중요] ScrollArea를 일반 div로 교체하여 페이지 전체 스크롤 방지 
+          - overflow-y-auto: 채팅 영역 내부에서만 스크롤 발생
+          - min-h-0: flex 레이아웃에서 높이 깨짐 방지
+        */}
+        <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
           <div className="space-y-4">
             {!currentRequest ? ( <div className="text-center text-slate-400 text-xs mt-10">요청을 선택하세요.</div> ) : currentRequest.comments.length === 0 ? ( <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div> ) : (
               currentRequest.comments.map((cmt, idx) => (
@@ -442,8 +456,10 @@ export function MDMForm() {
                 </div>
               ))
             )}
+            {/* ✅ 스크롤 앵커 포인트 */}
+            <div ref={messagesEndRef} />
           </div>
-        </ScrollArea>
+        </div>
         <div className="p-3 border-t bg-white">
           <div className="flex gap-2">
             <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="메시지 입력..." className="text-xs h-9 bg-slate-50" onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} disabled={!currentRequest} />
