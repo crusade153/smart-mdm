@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
   CheckCircle, XCircle, PlayCircle, Lock, Trash2, History,
-  HelpCircle, BookOpen
+  HelpCircle, BookOpen, Loader2, Info // ✅ [추가] 로딩(Loader2) 및 정보(Info) 아이콘 추가
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -52,6 +52,9 @@ export function MDMForm() {
   const [commentInput, setCommentInput] = useState("")
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
+  // ✅ [추가] 저장 중인지 여부를 판단하는 상태 변수 (로딩 상태 관리)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 컴포넌트 마운트 시 FAQ 데이터 로드
@@ -125,6 +128,7 @@ export function MDMForm() {
     }
   }, [currentRequest?.id, form, setComments]);
 
+  // ✅ [수정] onSubmit 함수에 로딩 상태 제어 로직 적용
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     let targetId = currentRequest?.id;
@@ -132,22 +136,44 @@ export function MDMForm() {
 
     if (!currentRequest) {
       if (!confirm("요청을 등록하시겠습니까?")) return;
-      const result = await createRequestAction(data, actorName);
-      if (result.success && result.id) {
-        alert(result.message);
-        targetId = result.id;
-        await refreshData(targetId);
-      } else {
-        alert(result.message);
-        return;
+      
+      // 로딩 시작 (버튼 비활성화 및 스피너 표시)
+      setIsSubmitting(true);
+
+      try {
+        const result = await createRequestAction(data, actorName);
+        if (result.success && result.id) {
+          alert(result.message);
+          targetId = result.id;
+          await refreshData(targetId);
+        } else {
+          alert(result.message);
+          return;
+        }
+      } catch (error) {
+        console.error(error);
+        alert("저장 중 오류가 발생했습니다.");
+      } finally {
+        // 로딩 종료 (성공하든 실패하든 무조건 실행)
+        setIsSubmitting(false);
       }
+
     } else {
-      const result = await updateRequestAction(currentRequest.id, data, actorName);
-      if (result.success) {
-        alert(result.message);
-        await refreshData(currentRequest.id);
-      } else {
-        alert(result.message);
+      // 수정인 경우
+      setIsSubmitting(true);
+      try {
+        const result = await updateRequestAction(currentRequest.id, data, actorName);
+        if (result.success) {
+          alert(result.message);
+          await refreshData(currentRequest.id);
+        } else {
+          alert(result.message);
+        }
+      } catch (error) {
+        console.error(error);
+        alert("수정 중 오류가 발생했습니다.");
+      } finally {
+        setIsSubmitting(false);
       }
     }
 
@@ -177,14 +203,22 @@ export function MDMForm() {
     let reqId = currentRequest?.id;
     if (!reqId) {
       if(!confirm("계층구조 요청을 위해 현재 내용을 임시 저장합니다.")) return;
-      const formData = form.getValues();
-      const result = await createRequestAction(formData, currentUser?.name || 'Unknown');
-      if (!result.success || !result.id) {
-        alert("임시 저장 실패");
-        return;
+      
+      // 로딩 시작
+      setIsSubmitting(true);
+      
+      try {
+        const formData = form.getValues();
+        const result = await createRequestAction(formData, currentUser?.name || 'Unknown');
+        if (!result.success || !result.id) {
+          alert("임시 저장 실패");
+          return;
+        }
+        reqId = result.id;
+        await refreshData(reqId);
+      } finally {
+        setIsSubmitting(false);
       }
-      reqId = result.id;
-      await refreshData(reqId);
     }
     await createCommentAction(reqId, msg, "System");
     alert("계층구조 생성 요청이 등록되었습니다.");
@@ -444,9 +478,25 @@ export function MDMForm() {
                </Button>
             )}
 
+            {/* ✅ [수정] 저장 버튼을 로딩 상태(isSubmitting)에 따라 다르게 표시 */}
             {canEdit && (
-                <Button onClick={form.handleSubmit(onSubmit)} variant="outline" className="h-9 text-xs gap-1">
-                  <Save size={14} /> 저장
+                <Button 
+                  onClick={form.handleSubmit(onSubmit)} 
+                  variant="outline" 
+                  className="h-9 text-xs gap-1 transition-all duration-200 min-w-[60px]" // 깜빡임 방지용 최소 너비
+                  disabled={isSubmitting} // 로딩 중 클릭 방지
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>처리중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={14} />
+                      <span>저장</span>
+                    </>
+                  )}
                 </Button>
             )}
 
@@ -459,9 +509,19 @@ export function MDMForm() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden flex flex-col">
           <Form {...form}>
-            <Tabs defaultValue="basic" className="flex flex-col h-full">
+            {/* ✅ [추가] 신규 작성 모드일 때 보여줄 상단 안내 배너 */}
+            {!currentRequest && (
+              <div className="bg-blue-50 border-b border-blue-100 px-6 py-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <Info size={16} className="text-blue-600 shrink-0" />
+                <p className="text-xs text-blue-700 font-medium">
+                  📝 <span className="font-bold">신규 작성 모드</span>입니다. 모든 필수 항목을 입력하고 우측 상단의 <span className="underline">저장 버튼</span>을 눌러주세요.
+                </p>
+              </div>
+            )}
+
+            <Tabs defaultValue="basic" className="flex flex-col h-full overflow-hidden">
               <div className="bg-white border-b px-4 shrink-0">
                 <TabsList className="h-10 bg-transparent w-full justify-start p-0 gap-4 overflow-x-auto no-scrollbar">
                   {FORM_TABS.map((tab) => (
