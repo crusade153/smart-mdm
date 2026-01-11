@@ -261,3 +261,39 @@ export async function getAuditLogsAction(requestId: string) {
     return [];
   }
 }
+
+// [NEW] 컬럼 설명서 데이터 타입 정의
+export interface ColumnDef {
+  key: string;
+  definition: string;
+  usage: string;
+  risk: string;
+}
+
+// [NEW] 9. 컬럼 설명서(FAQ) 불러오기
+export async function getColumnDefinitionsAction(): Promise<Record<string, ColumnDef>> {
+  try {
+    const sheet = await getSheetByTitle('column_defs'); 
+    const rows = await sheet.getRows();
+    
+    const defs: Record<string, ColumnDef> = {};
+    
+    rows.forEach(row => {
+      const key = row.get('field_key');
+      if (key) {
+        defs[key] = {
+          key,
+          definition: row.get('definition') || '',
+          usage: row.get('usage') || '',
+          risk: row.get('risk_factor') || '',
+        };
+      }
+    });
+
+    return defs;
+  } catch (error) {
+    // 탭이 없거나 오류 발생 시 빈 객체 반환 (앱이 멈추지 않도록)
+    console.error("FAQ Fetch Error (탭 'column_defs' 확인 필요):", error);
+    return {};
+  }
+}

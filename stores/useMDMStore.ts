@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { MaterialRequest, SapMasterData, RequestStatus } from '@/types/mdm';
+import { ColumnDef } from "@/actions/mdm"; // [NEW] 타입 가져오기
 
 const SAP_EXPORT_ORDER = [
   "WERKS","MTART","MBRSH","MATNR","MAKTX","MEINS","MATKL","EXTWG","BISMT","SPART",
@@ -37,6 +38,7 @@ interface MDMState {
   selectedIds: string[];
   isLoggedIn: boolean;
   currentUser: UserInfo | null;
+  columnDefs: Record<string, ColumnDef>; // [NEW] 컬럼 설명 데이터
 
   setLoginUser: (user: UserInfo) => void;
   logout: () => void;
@@ -44,6 +46,7 @@ interface MDMState {
   // DB 데이터 동기화용 액션
   setRequests: (requests: MaterialRequest[]) => void;
   setComments: (requestId: string, comments: any[]) => void;
+  setColumnDefs: (defs: Record<string, ColumnDef>) => void; // [NEW]
 
   addRequest: (data: SapMasterData) => void;
   updateRequest: (id: string, data: Partial<SapMasterData>) => void;
@@ -59,23 +62,23 @@ interface MDMState {
 }
 
 export const useMDMStore = create<MDMState>((set, get) => ({
-  requests: [], // DB에서 불러오기 위해 초기값은 빈 배열
+  requests: [],
   currentRequest: null,
   selectedIds: [],
   isLoggedIn: false,
   currentUser: null,
+  columnDefs: {}, // [NEW] 초기값
 
   setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
   logout: () => set({ isLoggedIn: false, currentUser: null }),
 
-  // DB 데이터 적용
   setRequests: (requests) => set({ requests }),
   setComments: (requestId, comments) => set((state) => ({
     requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
     currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
   })),
+  setColumnDefs: (defs) => set({ columnDefs: defs }), // [NEW]
 
-  // 로컬 상태 업데이트 (Optimistic UI)
   addRequest: (data) => set((state) => ({
     requests: [{
       id: `REQ-${Date.now()}`,

@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
-  CheckCircle, XCircle, PlayCircle, Lock, Trash2, History
+  CheckCircle, XCircle, PlayCircle, Lock, Trash2, History,
+  HelpCircle, BookOpen
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover" // [NEW] Popover import
 
 import { MDM_FORM_SCHEMA, FORM_TABS, FieldMeta } from "@/lib/constants/sap-fields"
 import { useMDMStore } from "@/stores/useMDMStore"
@@ -31,21 +37,29 @@ import {
   getRequestsAction,
   updateRequestAction, 
   deleteRequestAction,
-  updateStatusAction 
+  updateStatusAction,
+  getColumnDefinitionsAction // [NEW] import
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
 
 export function MDMForm() {
   const { 
     currentRequest, setCurrentRequest, setRequests, createNewRequest,
-    setComments, currentUser, toggleUserMode 
+    setComments, currentUser, toggleUserMode,
+    columnDefs, setColumnDefs // [NEW] store state
   } = useMDMStore()
   
   const [commentInput, setCommentInput] = useState("")
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
-  // ✅ 스크롤 자동 이동을 위한 Ref
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // [NEW] 컴포넌트 마운트 시 FAQ 데이터 로드
+  useEffect(() => {
+    if (Object.keys(columnDefs).length === 0) {
+      getColumnDefinitionsAction().then(data => setColumnDefs(data));
+    }
+  }, [columnDefs, setColumnDefs]);
 
   // 권한 체크
   const isOwner = currentRequest?.requesterName === currentUser?.name;
@@ -71,14 +85,12 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
-  // ✅ [수정] 메시지가 업데이트될 때 스크롤이 전체 페이지를 내리지 않도록 'nearest' 옵션 사용
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [currentRequest?.comments]);
 
-  // 데이터 동기화
   const refreshData = async (targetId?: string) => {
     const latestRequests = await getRequestsAction();
     setRequests(latestRequests);
@@ -113,7 +125,6 @@ export function MDMForm() {
     }
   }, [currentRequest?.id, form, setComments]);
 
-  // 저장 핸들러
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     let targetId = currentRequest?.id;
@@ -253,6 +264,60 @@ export function MDMForm() {
     }
   }
 
+  // [NEW] 라벨 + 도움말 아이콘 렌더링 함수
+  const renderLabelWithHelp = (field: FieldMeta) => {
+    const def = columnDefs[field.key];
+
+    return (
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <FormLabel className="text-[11px] font-bold text-slate-500 flex items-center m-0">
+          {field.label}
+          {field.required && <span className="text-red-500 ml-0.5">*</span>}
+        </FormLabel>
+        
+        {def && (
+          <Popover>
+            <PopoverTrigger asChild>
+<button type="button" className="text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none">
+  <HelpCircle size={13} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0 overflow-hidden shadow-xl border-indigo-100" side="right" align="start">
+              <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex items-center gap-2">
+                <BookOpen size={16} className="text-indigo-600"/>
+                <h4 className="font-bold text-indigo-900 text-sm">{field.label} <span className="font-normal text-xs text-indigo-400">({field.key})</span></h4>
+              </div>
+              <div className="p-4 space-y-3 bg-white text-xs">
+                {def.definition && (
+                  <div>
+                    <span className="font-bold text-slate-700 block mb-1">📖 정의</span>
+                    <p className="text-slate-600 leading-relaxed">{def.definition}</p>
+                  </div>
+                )}
+                {def.usage && (
+                  <div>
+                    <span className="font-bold text-slate-700 block mb-1">💡 용도 및 예시</span>
+                    <p className="text-slate-600 leading-relaxed bg-slate-50 p-2 rounded">{def.usage}</p>
+                  </div>
+                )}
+                {def.risk && (
+                  <div>
+                    <span className="font-bold text-red-600 block mb-1 flex items-center gap-1">
+                      <AlertTriangle size={12}/> 오입력 시 리스크
+                    </span>
+                    <p className="text-red-500 leading-relaxed bg-red-50 p-2 rounded border border-red-100">
+                      {def.risk}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+    );
+  };
+
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
     let isReadOnly = field.fixed || !canEdit;
@@ -348,8 +413,6 @@ export function MDMForm() {
 
   return (
     <div className="flex h-full bg-slate-50/50">
-      
-      {/* 팝업 컴포넌트 */}
       <AuditLogDialog 
         requestId={currentRequest?.id || null} 
         isOpen={isHistoryOpen} 
@@ -418,7 +481,8 @@ export function MDMForm() {
                             <FormField control={form.control} name={field.key as string}
                               render={({ field: fieldProps }) => (
                                 <FormItem className="space-y-1">
-                                  <FormLabel className="text-[11px] font-bold text-slate-500 flex items-center">{field.label}{field.required && <span className="text-red-500 ml-0.5">*</span>}</FormLabel>
+                                  {/* [NEW] renderLabelWithHelp 사용 */}
+                                  {renderLabelWithHelp(field)} 
                                   {renderFieldInput(field, fieldProps)}
                                   <FormMessage className="text-[10px]" />
                                 </FormItem>
@@ -440,10 +504,6 @@ export function MDMForm() {
         <div className="h-16 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm"><MessageSquare size={16}/> 메시지 히스토리</h3>
         </div>
-        {/* ✅ [중요] ScrollArea를 일반 div로 교체하여 페이지 전체 스크롤 방지 
-          - overflow-y-auto: 채팅 영역 내부에서만 스크롤 발생
-          - min-h-0: flex 레이아웃에서 높이 깨짐 방지
-        */}
         <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
           <div className="space-y-4">
             {!currentRequest ? ( <div className="text-center text-slate-400 text-xs mt-10">요청을 선택하세요.</div> ) : currentRequest.comments.length === 0 ? ( <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div> ) : (
@@ -456,7 +516,6 @@ export function MDMForm() {
                 </div>
               ))
             )}
-            {/* ✅ 스크롤 앵커 포인트 */}
             <div ref={messagesEndRef} />
           </div>
         </div>
