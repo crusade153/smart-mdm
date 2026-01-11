@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MaterialRequest, SapMasterData, RequestStatus } from '@/types/mdm';
-import { ColumnDef } from "@/actions/mdm"; // [NEW] 타입 가져오기
+import { ColumnDef } from "@/actions/mdm";
 
 const SAP_EXPORT_ORDER = [
   "WERKS","MTART","MBRSH","MATNR","MAKTX","MEINS","MATKL","EXTWG","BISMT","SPART",
@@ -38,7 +38,7 @@ interface MDMState {
   selectedIds: string[];
   isLoggedIn: boolean;
   currentUser: UserInfo | null;
-  columnDefs: Record<string, ColumnDef>; // [NEW] 컬럼 설명 데이터
+  columnDefs: Record<string, ColumnDef>;
 
   setLoginUser: (user: UserInfo) => void;
   logout: () => void;
@@ -46,7 +46,7 @@ interface MDMState {
   // DB 데이터 동기화용 액션
   setRequests: (requests: MaterialRequest[]) => void;
   setComments: (requestId: string, comments: any[]) => void;
-  setColumnDefs: (defs: Record<string, ColumnDef>) => void; // [NEW]
+  setColumnDefs: (defs: Record<string, ColumnDef>) => void;
 
   addRequest: (data: SapMasterData) => void;
   updateRequest: (id: string, data: Partial<SapMasterData>) => void;
@@ -58,7 +58,6 @@ interface MDMState {
   toggleSelection: (id: string) => void;
   toggleAllSelection: (ids: string[]) => void;
   downloadSelectedCsv: () => void;
-  toggleUserMode: () => void; 
 }
 
 export const useMDMStore = create<MDMState>((set, get) => ({
@@ -67,7 +66,7 @@ export const useMDMStore = create<MDMState>((set, get) => ({
   selectedIds: [],
   isLoggedIn: false,
   currentUser: null,
-  columnDefs: {}, // [NEW] 초기값
+  columnDefs: {},
 
   setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
   logout: () => set({ isLoggedIn: false, currentUser: null }),
@@ -77,7 +76,7 @@ export const useMDMStore = create<MDMState>((set, get) => ({
     requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
     currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
   })),
-  setColumnDefs: (defs) => set({ columnDefs: defs }), // [NEW]
+  setColumnDefs: (defs) => set({ columnDefs: defs }),
 
   addRequest: (data) => set((state) => ({
     requests: [{
@@ -156,8 +155,4 @@ export const useMDMStore = create<MDMState>((set, get) => ({
     link.download = `SAP_Upload_${new Date().toISOString().slice(0,19).replace(/:/g,'')}.csv`;
     link.click();
   },
-
-  toggleUserMode: () => set((state) => ({
-    currentUser: state.currentUser ? { ...state.currentUser, isAdmin: !state.currentUser.isAdmin } : null
-  })),
 }));

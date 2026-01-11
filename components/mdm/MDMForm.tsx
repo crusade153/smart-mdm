@@ -23,7 +23,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover" // [NEW] Popover import
+} from "@/components/ui/popover"
 
 import { MDM_FORM_SCHEMA, FORM_TABS, FieldMeta } from "@/lib/constants/sap-fields"
 import { useMDMStore } from "@/stores/useMDMStore"
@@ -38,15 +38,15 @@ import {
   updateRequestAction, 
   deleteRequestAction,
   updateStatusAction,
-  getColumnDefinitionsAction // [NEW] import
+  getColumnDefinitionsAction
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
 
 export function MDMForm() {
   const { 
     currentRequest, setCurrentRequest, setRequests, createNewRequest,
-    setComments, currentUser, toggleUserMode,
-    columnDefs, setColumnDefs // [NEW] store state
+    setComments, currentUser,
+    columnDefs, setColumnDefs
   } = useMDMStore()
   
   const [commentInput, setCommentInput] = useState("")
@@ -54,7 +54,7 @@ export function MDMForm() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // [NEW] 컴포넌트 마운트 시 FAQ 데이터 로드
+  // 컴포넌트 마운트 시 FAQ 데이터 로드
   useEffect(() => {
     if (Object.keys(columnDefs).length === 0) {
       getColumnDefinitionsAction().then(data => setColumnDefs(data));
@@ -264,7 +264,7 @@ export function MDMForm() {
     }
   }
 
-  // [NEW] 라벨 + 도움말 아이콘 렌더링 함수
+  // 라벨 + 도움말 아이콘 렌더링 함수
   const renderLabelWithHelp = (field: FieldMeta) => {
     const def = columnDefs[field.key];
 
@@ -278,8 +278,8 @@ export function MDMForm() {
         {def && (
           <Popover>
             <PopoverTrigger asChild>
-<button type="button" className="text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none">
-  <HelpCircle size={13} />
+              <button type="button" className="text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none">
+                <HelpCircle size={13} />
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0 overflow-hidden shadow-xl border-indigo-100" side="right" align="start">
@@ -424,8 +424,8 @@ export function MDMForm() {
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-lg text-slate-800">{currentRequest ? '상세 정보' : '신규 요청'}</h2>
-              <span onClick={toggleUserMode} className={`text-[10px] px-2 py-0.5 rounded cursor-pointer select-none border transition-colors ${currentUser?.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                  {currentUser?.isAdmin ? '👑 관리자 모드' : '👤 사용자 모드'}
+              <span className={`text-[10px] px-2 py-0.5 rounded select-none border transition-colors cursor-default ${currentUser?.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                  {currentUser?.isAdmin ? '👑 관리자 계정' : '👤 일반 사용자'}
               </span>
             </div>
             {currentRequest && ( <span className="text-xs text-slate-400 font-mono">{currentRequest.id} | <span className={currentRequest.status === 'Approved' ? 'text-green-600 font-bold' : ''}>{currentRequest.status}</span></span> )}
@@ -481,7 +481,6 @@ export function MDMForm() {
                             <FormField control={form.control} name={field.key as string}
                               render={({ field: fieldProps }) => (
                                 <FormItem className="space-y-1">
-                                  {/* [NEW] renderLabelWithHelp 사용 */}
                                   {renderLabelWithHelp(field)} 
                                   {renderFieldInput(field, fieldProps)}
                                   <FormMessage className="text-[10px]" />
