@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Popover,
   PopoverContent,
@@ -49,15 +48,12 @@ export function MDMForm() {
     columnDefs, setColumnDefs
   } = useMDMStore()
   
-  // ✅ 중요: 검색 필터링 등으로 인해 currentRequest 참조가 끊어지지 않도록
-  // 전체 requests 목록에서 현재 선택된 ID와 일치하는 최신 객체를 실시간으로 찾아서 사용합니다.
   const activeRequest = requests.find(r => r.id === currentRequest?.id) || currentRequest;
 
   const [commentInput, setCommentInput] = useState("")
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  // 댓글 로딩 상태 추가
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -68,7 +64,6 @@ export function MDMForm() {
     }
   }, [columnDefs, setColumnDefs]);
 
-  // 권한 체크 (activeRequest 기준)
   const isOwner = activeRequest?.requesterName === currentUser?.name;
   const isAdmin = currentUser?.isAdmin;
   const isRequestedStatus = activeRequest?.status === 'Requested';
@@ -92,7 +87,6 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
-  // 스크롤 자동 이동
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -107,7 +101,6 @@ export function MDMForm() {
       const updatedRequest = latestRequests.find(r => r.id === targetId);
       if (updatedRequest) {
         setCurrentRequest(updatedRequest);
-        // 댓글도 새로고침
         const comments = await getCommentsAction(targetId);
         setComments(targetId, comments);
         form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
@@ -116,12 +109,41 @@ export function MDMForm() {
   };
 
   const mtart = form.watch("MTART");
+  const werks = form.watch("WERKS"); // WERKS 감지
+
+  // 자재유형 연동 로직
   useEffect(() => {
-    if (mtart === 'HAWA') form.setValue('BKLAS', '3100');
-    else if (mtart) form.setValue('BKLAS', '7920');
+    if (mtart === 'FERT' || mtart === 'ZSET') {
+      form.setValue('BESKZ', 'E');
+      form.setValue('BKLAS', '7920');
+      form.setValue('MLAST', 3);
+    } else if (mtart === 'HAWA') {
+      form.setValue('BESKZ', 'F');
+      form.setValue('BKLAS', '3100');
+      form.setValue('MLAST', 2);
+    }
   }, [mtart, form]);
 
-  // 폼 데이터 리셋 및 댓글 로딩
+  // ✅ [수정] WERKS(플랜트) 값에 따른 LGPRO, LGFSB 자동 세팅 로직
+  useEffect(() => {
+    // LGPRO 로직
+    if (werks === '1021' || werks === '1022') {
+        form.setValue('LGPRO', '2200');
+    } else if (werks === '1023') {
+        form.setValue('LGPRO', '2301');
+    } 
+    // 1031일때는 직접입력이므로 강제 세팅 안함
+
+    // LGFSB 로직 (고정되는 경우만 세팅)
+    if (werks === '1022') {
+        form.setValue('LGFSB', '2210');
+    } else if (werks === '1023') {
+        form.setValue('LGFSB', '2301');
+    }
+    // 1021, 1031은 선택/입력이므로 자동 세팅 안함
+  }, [werks, form]);
+
+
   useEffect(() => {
     if (activeRequest) {
       form.reset({ ...generateDefaultValues(), ...activeRequest.data });
@@ -136,13 +158,11 @@ export function MDMForm() {
         }
       };
       
-      // 댓글 데이터가 비어있거나 초기화 상태일 때만 로딩 (이미 있으면 스킵하여 깜빡임 방지)
-      // 단, 검색 등으로 인해 다시 마운트될 수 있으므로 id가 바뀔 때마다 체크
       loadComments();
     } else {
       form.reset(generateDefaultValues());
     }
-  }, [activeRequest?.id, form, setComments]); // activeRequest.id가 바뀔 때만 실행
+  }, [activeRequest?.id, form, setComments]); 
 
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
@@ -365,10 +385,36 @@ export function MDMForm() {
   };
 
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
-    const requiredStyle = field.required ? "bg-amber-50 border-amber-200 focus:ring-amber-500" : "bg-white";
     let isReadOnly = field.fixed || !canEdit;
     if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
-    const readOnlyStyle = isReadOnly ? "bg-slate-100 text-slate-500 cursor-not-allowed" : requiredStyle;
+
+    // ✅ 동적 UI 처리 (LGPRO, LGFSB)
+    if (field.key === 'LGPRO') {
+        if (werks === '1021' || werks === '1022' || werks === '1023') {
+            isReadOnly = true; // 자동 고정이므로 수정 불가
+        }
+        // 1031인 경우는 기본적으로 수정 가능 (readOnly = false)
+    }
+    
+    if (field.key === 'LGFSB') {
+        if (werks === '1022' || werks === '1023') {
+            isReadOnly = true;
+        }
+        // 1021, 1031은 수정/선택 가능
+    }
+
+    let fieldStyle = "h-9 text-sm ";
+    if (isReadOnly || field.fixed) {
+      if (field.defaultValue !== undefined && field.defaultValue !== '' || (field.key === 'LGPRO' && isReadOnly) || (field.key === 'LGFSB' && isReadOnly)) {
+        fieldStyle += "bg-blue-50 text-blue-700 font-semibold border-blue-200 cursor-not-allowed";
+      } else {
+        fieldStyle += "bg-slate-100 text-slate-400 cursor-not-allowed";
+      }
+    } else if (field.required) {
+      fieldStyle += "bg-amber-50 border-amber-200 focus:ring-amber-500";
+    } else {
+      fieldStyle += "bg-white";
+    }
 
     if (field.key === 'MATNR') {
         return (
@@ -386,6 +432,25 @@ export function MDMForm() {
             </FormControl>
         )
     }
+
+    // ✅ LGFSB - 1021일 때 선택 박스로 렌더링
+    if (field.key === 'LGFSB' && werks === '1021') {
+        return (
+          <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
+            <FormControl>
+              <SelectTrigger className={fieldStyle}>
+                <SelectValue placeholder="선택 (1021 전용)" />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value="2101">2101 제품냉동창고</SelectItem>
+              <SelectItem value="2102">2102 제품냉장창고</SelectItem>
+              <SelectItem value="2103">2103 제품상온창고</SelectItem>
+            </SelectContent>
+          </Select>
+        );
+    }
+
     if (field.type === 'custom_prdha') {
         return ( 
             <FormControl> 
@@ -399,7 +464,7 @@ export function MDMForm() {
       return (
         <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
           <FormControl>
-            <SelectTrigger className={`h-9 text-sm ${readOnlyStyle}`}>
+            <SelectTrigger className={fieldStyle}>
               <SelectValue placeholder="선택" />
             </SelectTrigger>
           </FormControl>
@@ -416,7 +481,7 @@ export function MDMForm() {
         return (
           <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
             <FormControl>
-              <SelectTrigger className={`h-9 text-sm ${readOnlyStyle}`}>
+              <SelectTrigger className={fieldStyle}>
                 <SelectValue placeholder="선택" />
               </SelectTrigger>
             </FormControl>
@@ -432,7 +497,7 @@ export function MDMForm() {
       return (
         <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
           <FormControl>
-            <SelectTrigger className={`h-9 text-sm ${readOnlyStyle}`}>
+            <SelectTrigger className={fieldStyle}>
               <SelectValue placeholder="선택" />
             </SelectTrigger>
           </FormControl>
@@ -451,7 +516,7 @@ export function MDMForm() {
           value={fieldProps.value || ''} 
           type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} 
           readOnly={isReadOnly} 
-          className={`h-9 text-sm ${readOnlyStyle}`} 
+          className={fieldStyle} 
         />
       </FormControl>
     );
@@ -541,7 +606,8 @@ export function MDMForm() {
                   ))}
                 </TabsList>
               </div>
-              <ScrollArea className="flex-1 bg-slate-50 p-6">
+              
+              <div className="flex-1 overflow-y-auto bg-slate-50 p-6">
                 {FORM_TABS.map((tab) => (
                   <TabsContent key={tab.id} value={tab.id} className="mt-0">
                     <Card className="p-6 border-slate-200 shadow-sm">
@@ -563,7 +629,7 @@ export function MDMForm() {
                     </Card>
                   </TabsContent>
                 ))}
-              </ScrollArea>
+              </div>
             </Tabs>
           </Form>
         </div>
