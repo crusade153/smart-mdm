@@ -16,14 +16,24 @@ export default function MainPage() {
   useEffect(() => {
     if (!isLoggedIn) {
       router.push('/login')
-    } else {
-      // DB에서 목록 불러오기
-      const loadData = async () => {
-        const data = await getRequestsAction();
-        setRequests(data);
-      };
-      loadData();
+      return; 
     }
+
+    const loadData = async () => {
+      const data = await getRequestsAction();
+      setRequests(data);
+    };
+    
+    // 최초 실행
+    loadData();
+
+    // 5초마다 데이터 갱신 (Polling)
+    const intervalId = setInterval(() => {
+      loadData();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+
   }, [isLoggedIn, router, setRequests])
 
   const handleLogout = () => {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { MaterialRequest, SapMasterData, RequestStatus } from '@/types/mdm';
 import { ColumnDef } from "@/actions/mdm";
 
@@ -60,99 +61,107 @@ interface MDMState {
   downloadSelectedCsv: () => void;
 }
 
-export const useMDMStore = create<MDMState>((set, get) => ({
-  requests: [],
-  currentRequest: null,
-  selectedIds: [],
-  isLoggedIn: false,
-  currentUser: null,
-  columnDefs: {},
+export const useMDMStore = create<MDMState>()(
+  persist(
+    (set, get) => ({
+      requests: [],
+      currentRequest: null,
+      selectedIds: [],
+      isLoggedIn: false,
+      currentUser: null,
+      columnDefs: {},
 
-  setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
-  logout: () => set({ isLoggedIn: false, currentUser: null }),
+      setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
+      logout: () => set({ isLoggedIn: false, currentUser: null, requests: [], currentRequest: null }),
 
-  setRequests: (requests) => set({ requests }),
-  setComments: (requestId, comments) => set((state) => ({
-    requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
-    currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
-  })),
-  setColumnDefs: (defs) => set({ columnDefs: defs }),
+      setRequests: (requests) => set({ requests }),
+      setComments: (requestId, comments) => set((state) => ({
+        requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
+        currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
+      })),
+      setColumnDefs: (defs) => set({ columnDefs: defs }),
 
-  addRequest: (data) => set((state) => ({
-    requests: [{
-      id: `REQ-${Date.now()}`,
-      status: 'Requested',
-      requesterName: state.currentUser?.name || 'Unknown',
-      createdAt: new Date().toISOString(),
-      data, comments: []
-    }, ...state.requests],
-    currentRequest: null 
-  })),
+      addRequest: (data) => set((state) => ({
+        requests: [{
+          id: `REQ-${Date.now()}`,
+          status: 'Requested',
+          requesterName: state.currentUser?.name || 'Unknown',
+          createdAt: new Date().toISOString(),
+          data, comments: []
+        }, ...state.requests],
+        currentRequest: null 
+      })),
 
-  updateRequest: (id, data) => set((state) => ({
-    requests: state.requests.map(req => req.id === id ? { ...req, data: { ...req.data, ...data } } : req),
-    currentRequest: state.currentRequest?.id === id 
-      ? { ...state.currentRequest, data: { ...state.currentRequest.data, ...data } } 
-      : state.currentRequest
-  })),
+      updateRequest: (id, data) => set((state) => ({
+        requests: state.requests.map(req => req.id === id ? { ...req, data: { ...req.data, ...data } } : req),
+        currentRequest: state.currentRequest?.id === id 
+          ? { ...state.currentRequest, data: { ...state.currentRequest.data, ...data } } 
+          : state.currentRequest
+      })),
 
-  updateStatus: (id, status) => set((state) => ({
-    requests: state.requests.map(req => req.id === id ? { ...req, status } : req),
-    currentRequest: state.currentRequest?.id === id 
-      ? { ...state.currentRequest, status } 
-      : state.currentRequest
-  })),
+      updateStatus: (id, status) => set((state) => ({
+        requests: state.requests.map(req => req.id === id ? { ...req, status } : req),
+        currentRequest: state.currentRequest?.id === id 
+          ? { ...state.currentRequest, status } 
+          : state.currentRequest
+      })),
 
-  updateSapCode: (id, matnr) => set((state) => {
-    const updater = (req: MaterialRequest) => 
-      req.id === id ? { ...req, status: 'Approved' as RequestStatus, data: { ...req.data, MATNR: matnr } } : req;
-    
-    return {
-      requests: state.requests.map(updater),
-      currentRequest: state.currentRequest?.id === id ? updater(state.currentRequest) : state.currentRequest
-    };
-  }),
+      updateSapCode: (id, matnr) => set((state) => {
+        const updater = (req: MaterialRequest) => 
+          req.id === id ? { ...req, status: 'Approved' as RequestStatus, data: { ...req.data, MATNR: matnr } } : req;
+        
+        return {
+          requests: state.requests.map(updater),
+          currentRequest: state.currentRequest?.id === id ? updater(state.currentRequest) : state.currentRequest
+        };
+      }),
 
-  addComment: (requestId, message, writer) => set((state) => ({
-    requests: state.requests.map(req => req.id === requestId ? { ...req, comments: [...req.comments, { writer, message, createdAt: new Date().toISOString() }] } : req),
-    currentRequest: state.currentRequest?.id === requestId 
-      ? { ...state.currentRequest, comments: [...state.currentRequest.comments, { writer, message, createdAt: new Date().toISOString() }] }
-      : state.currentRequest
-  })),
+      addComment: (requestId, message, writer) => set((state) => ({
+        requests: state.requests.map(req => req.id === requestId ? { ...req, comments: [...req.comments, { writer, message, createdAt: new Date().toISOString() }] } : req),
+        currentRequest: state.currentRequest?.id === requestId 
+          ? { ...state.currentRequest, comments: [...state.currentRequest.comments, { writer, message, createdAt: new Date().toISOString() }] }
+          : state.currentRequest
+      })),
 
-  setCurrentRequest: (request) => set({ currentRequest: request }),
-  createNewRequest: () => set({ currentRequest: null }),
-  toggleSelection: (id) => set((state) => ({
-    selectedIds: state.selectedIds.includes(id) ? state.selectedIds.filter(sid => sid !== id) : [...state.selectedIds, id]
-  })),
-  toggleAllSelection: (ids) => set({ selectedIds: ids }),
+      setCurrentRequest: (request) => set({ currentRequest: request }),
+      createNewRequest: () => set({ currentRequest: null }),
+      toggleSelection: (id) => set((state) => ({
+        selectedIds: state.selectedIds.includes(id) ? state.selectedIds.filter(sid => sid !== id) : [...state.selectedIds, id]
+      })),
+      toggleAllSelection: (ids) => set({ selectedIds: ids }),
 
-  downloadSelectedCsv: () => {
-    const { requests, selectedIds } = get();
-    const targets = requests.filter(r => selectedIds.includes(r.id));
-    if (targets.length === 0) {
-      alert("다운로드할 항목을 선택해주세요.");
-      return;
-    }
-    const headerRow3 = SAP_EXPORT_ORDER.join(',');
-    const rows = targets.map(req => {
-      return SAP_EXPORT_ORDER.map(col => {
-        if (col === 'CLASS') return '"ZMM001"';
-        const mnameMatch = col.match(/^MNAME_(\d+)$/);
-        if (mnameMatch) {
-            const index = parseInt(mnameMatch[1]);
-            const paddedIndex = String(index).padStart(3, '0');
-            return `"ZMMC${paddedIndex}"`;
+      downloadSelectedCsv: () => {
+        const { requests, selectedIds } = get();
+        const targets = requests.filter(r => selectedIds.includes(r.id));
+        if (targets.length === 0) {
+          alert("다운로드할 항목을 선택해주세요.");
+          return;
         }
-        const val = req.data[col] || '';
-        return `"${String(val).replace(/"/g, '""')}"`;
-      }).join(',');
-    });
-    const csvContent = [CSV_HEADER_ROW_1, CSV_HEADER_ROW_2, headerRow3, ...rows].join('\n');
-    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `SAP_Upload_${new Date().toISOString().slice(0,19).replace(/:/g,'')}.csv`;
-    link.click();
-  },
-}));
+        const headerRow3 = SAP_EXPORT_ORDER.join(',');
+        const rows = targets.map(req => {
+          return SAP_EXPORT_ORDER.map(col => {
+            if (col === 'CLASS') return '"ZMM001"';
+            const mnameMatch = col.match(/^MNAME_(\d+)$/);
+            if (mnameMatch) {
+                const index = parseInt(mnameMatch[1]);
+                const paddedIndex = String(index).padStart(3, '0');
+                return `"ZMMC${paddedIndex}"`;
+            }
+            const val = req.data[col] || '';
+            return `"${String(val).replace(/"/g, '""')}"`;
+          }).join(',');
+        });
+        const csvContent = [CSV_HEADER_ROW_1, CSV_HEADER_ROW_2, headerRow3, ...rows].join('\n');
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `SAP_Upload_${new Date().toISOString().slice(0,19).replace(/:/g,'')}.csv`;
+        link.click();
+      },
+    }),
+    {
+      name: 'mdm-storage', 
+      storage: createJSONStorage(() => sessionStorage), 
+    }
+  )
+);

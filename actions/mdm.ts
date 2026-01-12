@@ -178,11 +178,11 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
         ));
         
         // [수정] 코멘트 요약 메시지 포맷 개선
-        // 예: "✏️ [수정] 2개 항목 변경 (순중량: 4 → 5, 자재내역: A → B)"
         const changeDetails = changes.map(c => `${c.label}: ${c.old} → ${c.new}`).join(', ');
         const summary = `✏️ [수정] ${changes.length}개 항목 변경 (${changeDetails})`;
         
-        await createCommentAction(requestId, summary, "System");
+        // ✅ 수정됨: System 대신 actorName 사용
+        await createCommentAction(requestId, summary, actorName);
     }
 
     return { success: true, message: "수정되었습니다." };
