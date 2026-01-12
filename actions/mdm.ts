@@ -292,8 +292,34 @@ export async function getColumnDefinitionsAction(): Promise<Record<string, Colum
 
     return defs;
   } catch (error) {
-    // 탭이 없거나 오류 발생 시 빈 객체 반환 (앱이 멈추지 않도록)
     console.error("FAQ Fetch Error (탭 'column_defs' 확인 필요):", error);
     return {};
+  }
+}
+
+// [NEW] 10. 제품계층구조 불러오기 (구글 시트 연동)
+export interface HierarchyItem {
+  level: number;
+  code: string;
+  name: string;
+  parent: string;
+}
+
+export async function getHierarchyAction(): Promise<HierarchyItem[]> {
+  try {
+    // 구글 시트의 '제품계층구조' 탭을 가져옵니다.
+    const sheet = await getSheetByTitle('제품계층구조'); 
+    const rows = await sheet.getRows();
+    
+    // 데이터를 가공하여 반환합니다.
+    return rows.map(row => ({
+      level: Number(row.get('레벨')),
+      code: String(row.get('코드')),
+      name: String(row.get('이름')),
+      parent: String(row.get('부모코드') || '') // 부모코드가 없는 경우(L1) 빈 문자열 처리
+    }));
+  } catch (error) {
+    console.error("Hierarchy Fetch Error (탭 '제품계층구조' 확인 필요):", error);
+    return [];
   }
 }
