@@ -44,15 +44,21 @@ import { AuditLogDialog } from "./AuditLogDialog"
 
 export function MDMForm() {
   const { 
-    currentRequest, setCurrentRequest, setRequests, createNewRequest,
+    currentRequest, requests, setCurrentRequest, setRequests, createNewRequest,
     setComments, currentUser,
     columnDefs, setColumnDefs
   } = useMDMStore()
   
+  // ✅ 중요: 검색 필터링 등으로 인해 currentRequest 참조가 끊어지지 않도록
+  // 전체 requests 목록에서 현재 선택된 ID와 일치하는 최신 객체를 실시간으로 찾아서 사용합니다.
+  const activeRequest = requests.find(r => r.id === currentRequest?.id) || currentRequest;
+
   const [commentInput, setCommentInput] = useState("")
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
-  
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // 댓글 로딩 상태 추가
+  const [isCommentsLoading, setIsCommentsLoading] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -62,15 +68,15 @@ export function MDMForm() {
     }
   }, [columnDefs, setColumnDefs]);
 
-  // 권한 체크
-  const isOwner = currentRequest?.requesterName === currentUser?.name;
+  // 권한 체크 (activeRequest 기준)
+  const isOwner = activeRequest?.requesterName === currentUser?.name;
   const isAdmin = currentUser?.isAdmin;
-  const isRequestedStatus = currentRequest?.status === 'Requested';
-  const isReviewStatus = currentRequest?.status === 'Review'; 
+  const isRequestedStatus = activeRequest?.status === 'Requested';
+  const isReviewStatus = activeRequest?.status === 'Review'; 
 
-  const canEdit = !currentRequest || (isOwner && isRequestedStatus) || isAdmin;
+  const canEdit = !activeRequest || (isOwner && isRequestedStatus) || isAdmin;
   const canEditSapCode = isAdmin && isReviewStatus;
-  const canDelete = currentRequest && (isAdmin || isOwner);
+  const canDelete = activeRequest && (isAdmin || isOwner);
 
   const generateDefaultValues = () => {
     const defaults: any = {};
@@ -86,11 +92,12 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
+  // 스크롤 자동 이동
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [currentRequest?.comments]);
+  }, [activeRequest?.comments]);
 
   const refreshData = async (targetId?: string) => {
     const latestRequests = await getRequestsAction();
@@ -100,6 +107,7 @@ export function MDMForm() {
       const updatedRequest = latestRequests.find(r => r.id === targetId);
       if (updatedRequest) {
         setCurrentRequest(updatedRequest);
+        // 댓글도 새로고침
         const comments = await getCommentsAction(targetId);
         setComments(targetId, comments);
         form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
@@ -113,25 +121,35 @@ export function MDMForm() {
     else if (mtart) form.setValue('BKLAS', '7920');
   }, [mtart, form]);
 
+  // 폼 데이터 리셋 및 댓글 로딩
   useEffect(() => {
-    if (currentRequest) {
-      form.reset({ ...generateDefaultValues(), ...currentRequest.data });
+    if (activeRequest) {
+      form.reset({ ...generateDefaultValues(), ...activeRequest.data });
+      
       const loadComments = async () => {
-        const comments = await getCommentsAction(currentRequest.id);
-        setComments(currentRequest.id, comments);
+        setIsCommentsLoading(true);
+        try {
+          const comments = await getCommentsAction(activeRequest.id);
+          setComments(activeRequest.id, comments);
+        } finally {
+          setIsCommentsLoading(false);
+        }
       };
+      
+      // 댓글 데이터가 비어있거나 초기화 상태일 때만 로딩 (이미 있으면 스킵하여 깜빡임 방지)
+      // 단, 검색 등으로 인해 다시 마운트될 수 있으므로 id가 바뀔 때마다 체크
       loadComments();
     } else {
       form.reset(generateDefaultValues());
     }
-  }, [currentRequest?.id, form, setComments]);
+  }, [activeRequest?.id, form, setComments]); // activeRequest.id가 바뀔 때만 실행
 
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
-    let targetId = currentRequest?.id;
+    let targetId = activeRequest?.id;
     const actorName = currentUser?.name || 'Unknown';
 
-    if (!currentRequest) {
+    if (!activeRequest) {
       if (!confirm("요청을 등록하시겠습니까?")) return;
       
       setIsSubmitting(true);
@@ -156,10 +174,10 @@ export function MDMForm() {
     } else {
       setIsSubmitting(true);
       try {
-        const result = await updateRequestAction(currentRequest.id, data, actorName);
+        const result = await updateRequestAction(activeRequest.id, data, actorName);
         if (result.success) {
           alert(result.message);
-          await refreshData(currentRequest.id);
+          await refreshData(activeRequest.id);
         } else {
           alert(result.message);
         }
@@ -179,10 +197,10 @@ export function MDMForm() {
   }
 
   const handleDelete = async () => {
-    if (!currentRequest) return;
+    if (!activeRequest) return;
     if (!confirm("정말 이 요청을 삭제하시겠습니까?")) return;
 
-    const result = await deleteRequestAction(currentRequest.id);
+    const result = await deleteRequestAction(activeRequest.id);
     if (result.success) {
         alert(result.message);
         createNewRequest(); 
@@ -194,7 +212,7 @@ export function MDMForm() {
   }
 
   const handleHierarchyRequest = async (msg: string) => {
-    let reqId = currentRequest?.id;
+    let reqId = activeRequest?.id;
     if (!reqId) {
       if(!confirm("계층구조 요청을 위해 현재 내용을 임시 저장합니다.")) return;
       
@@ -219,25 +237,25 @@ export function MDMForm() {
   }
 
   const handleSendComment = async () => {
-    if (!commentInput.trim() || !currentRequest || !currentUser) return;
+    if (!commentInput.trim() || !activeRequest || !currentUser) return;
     const msg = commentInput;
-    const reqId = currentRequest.id;
+    const reqId = activeRequest.id;
     setCommentInput("");
     await createCommentAction(reqId, msg, currentUser.name);
     await refreshData(reqId);
   }
 
   const handleStartReview = async () => {
-    if (!currentRequest) return;
+    if (!activeRequest) return;
     if (!confirm("검토를 시작하시겠습니까? 상태가 '진행(Review)'로 변경됩니다.")) return;
 
     const actor = currentUser?.name || 'Admin';
-    const result = await updateStatusAction(currentRequest.id, 'Review', actor);
+    const result = await updateStatusAction(activeRequest.id, 'Review', actor);
     
     if(result.success) {
       const msg = "검토를 시작했습니다.";
-      await createCommentAction(currentRequest.id, msg, actor);
-      await refreshData(currentRequest.id);
+      await createCommentAction(activeRequest.id, msg, actor);
+      await refreshData(activeRequest.id);
       alert("검토 상태로 변경되었습니다.");
     } else {
       alert("상태 변경 실패: " + result.message);
@@ -245,17 +263,17 @@ export function MDMForm() {
   }
 
   const handleReject = async () => {
-    if (!currentRequest) return;
+    if (!activeRequest) return;
     const reason = prompt("반려 사유를 입력해주세요:");
     if (!reason) return;
 
     const actor = currentUser?.name || 'Admin';
-    const result = await updateStatusAction(currentRequest.id, 'Reject', actor);
+    const result = await updateStatusAction(activeRequest.id, 'Reject', actor);
 
     if(result.success) {
       const msg = `🚫 반려됨: ${reason}`;
-      await createCommentAction(currentRequest.id, msg, actor);
-      await refreshData(currentRequest.id);
+      await createCommentAction(activeRequest.id, msg, actor);
+      await refreshData(activeRequest.id);
       alert("반려 처리되었습니다.");
     } else {
        alert("반려 처리 실패: " + result.message);
@@ -263,7 +281,7 @@ export function MDMForm() {
   }
 
   const handleApprove = async () => {
-    if (!currentRequest) return;
+    if (!activeRequest) return;
     
     const matnrValue = form.getValues("MATNR");
     if (!matnrValue) {
@@ -274,19 +292,19 @@ export function MDMForm() {
     if (!confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까? 상태가 '완료(Approved)'로 변경됩니다.`)) return;
 
     const actor = currentUser?.name || 'Admin';
-    const dataUpdateResult = await updateRequestAction(currentRequest.id, { ...currentRequest.data, MATNR: matnrValue }, actor);
+    const dataUpdateResult = await updateRequestAction(activeRequest.id, { ...activeRequest.data, MATNR: matnrValue }, actor);
     
     if (!dataUpdateResult.success) {
         alert("자재코드 저장 중 오류 발생");
         return;
     }
 
-    const statusUpdateResult = await updateStatusAction(currentRequest.id, 'Approved', actor);
+    const statusUpdateResult = await updateStatusAction(activeRequest.id, 'Approved', actor);
 
     if (statusUpdateResult.success) {
       const msg = `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`;
-      await createCommentAction(currentRequest.id, msg, actor);
-      await refreshData(currentRequest.id);
+      await createCommentAction(activeRequest.id, msg, actor);
+      await refreshData(activeRequest.id);
       alert("최종 승인(완료) 처리되었습니다.");
     } else {
       alert("승인 처리 실패: " + statusUpdateResult.message);
@@ -442,7 +460,7 @@ export function MDMForm() {
   return (
     <div className="flex h-full bg-slate-50/50">
       <AuditLogDialog 
-        requestId={currentRequest?.id || null} 
+        requestId={activeRequest?.id || null} 
         isOpen={isHistoryOpen} 
         onClose={() => setIsHistoryOpen(false)} 
       />
@@ -451,16 +469,16 @@ export function MDMForm() {
         <div className="h-16 border-b bg-white px-6 flex items-center justify-between shrink-0">
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-lg text-slate-800">{currentRequest ? '상세 정보' : '신규 요청'}</h2>
+              <h2 className="font-bold text-lg text-slate-800">{activeRequest ? '상세 정보' : '신규 요청'}</h2>
               <span className={`text-[10px] px-2 py-0.5 rounded select-none border transition-colors cursor-default ${currentUser?.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                   {currentUser?.isAdmin ? '👑 관리자 계정' : '👤 일반 사용자'}
               </span>
             </div>
-            {currentRequest && ( <span className="text-xs text-slate-400 font-mono">{currentRequest.id} | <span className={currentRequest.status === 'Approved' ? 'text-green-600 font-bold' : ''}>{currentRequest.status}</span></span> )}
+            {activeRequest && ( <span className="text-xs text-slate-400 font-mono">{activeRequest.id} | <span className={activeRequest.status === 'Approved' ? 'text-green-600 font-bold' : ''}>{activeRequest.status}</span></span> )}
           </div>
 
           <div className="flex gap-2">
-            {currentRequest && (
+            {activeRequest && (
               <Button variant="outline" className="h-9 text-xs gap-1 text-slate-600" onClick={() => setIsHistoryOpen(true)}>
                 <History size={14} /> 이력
               </Button>
@@ -493,10 +511,10 @@ export function MDMForm() {
                 </Button>
             )}
 
-            {currentUser?.isAdmin && currentRequest && (
+            {currentUser?.isAdmin && activeRequest && (
                 <>
-                    {currentRequest.status === 'Requested' && ( <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-9 text-xs gap-1 text-white"><PlayCircle size={14} /> 검토 시작</Button> )}
-                    {currentRequest.status === 'Review' && ( <> <Button onClick={handleReject} variant="destructive" className="h-9 text-xs gap-1"><XCircle size={14} /> 반려</Button> <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700 h-9 text-xs gap-1 text-white"><CheckCircle size={14} /> 승인 & 채번</Button> </> )}
+                    {activeRequest.status === 'Requested' && ( <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-9 text-xs gap-1 text-white"><PlayCircle size={14} /> 검토 시작</Button> )}
+                    {activeRequest.status === 'Review' && ( <> <Button onClick={handleReject} variant="destructive" className="h-9 text-xs gap-1"><XCircle size={14} /> 반려</Button> <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700 h-9 text-xs gap-1 text-white"><CheckCircle size={14} /> 승인 & 채번</Button> </> )}
                 </>
             )}
           </div>
@@ -504,7 +522,7 @@ export function MDMForm() {
 
         <div className="flex-1 overflow-hidden flex flex-col">
           <Form {...form}>
-            {!currentRequest && (
+            {!activeRequest && (
               <div className="bg-blue-50 border-b border-blue-100 px-6 py-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
                 <Info size={16} className="text-blue-600 shrink-0" />
                 <p className="text-xs text-blue-700 font-medium">
@@ -557,8 +575,14 @@ export function MDMForm() {
         </div>
         <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
           <div className="space-y-4">
-            {!currentRequest ? ( <div className="text-center text-slate-400 text-xs mt-10">요청을 선택하세요.</div> ) : currentRequest.comments.length === 0 ? ( <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div> ) : (
-              currentRequest.comments.map((cmt, idx) => (
+            {isCommentsLoading ? (
+                <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div>
+            ) : !activeRequest ? ( 
+                <div className="text-center text-slate-400 text-xs mt-10">요청을 선택하세요.</div> 
+            ) : (activeRequest.comments || []).length === 0 ? ( 
+                <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div> 
+            ) : (
+              (activeRequest.comments || []).map((cmt, idx) => (
                 <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-1 text-[10px] text-slate-400"><span className="font-bold text-slate-600">{cmt.writer}</span><span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
                   <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
@@ -572,8 +596,8 @@ export function MDMForm() {
         </div>
         <div className="p-3 border-t bg-white">
           <div className="flex gap-2">
-            <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="메시지 입력..." className="text-xs h-9 bg-slate-50" onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} disabled={!currentRequest} />
-            <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!currentRequest}><Send size={14} /></Button>
+            <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="메시지 입력..." className="text-xs h-9 bg-slate-50" onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} disabled={!activeRequest} />
+            <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest}><Send size={14} /></Button>
           </div>
         </div>
       </div>

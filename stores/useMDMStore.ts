@@ -74,9 +74,29 @@ export const useMDMStore = create<MDMState>()(
       setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
       logout: () => set({ isLoggedIn: false, currentUser: null, requests: [], currentRequest: null }),
 
-      setRequests: (requests) => set({ requests }),
+      // 🔴 수정된 부분: 목록을 갱신하더라도 기존 댓글은 유지(Merge)하도록 로직 변경
+      setRequests: (newRequests) => set((state) => {
+        // 1. 기존 스토어에 있는 요청들의 '댓글(comments)' 정보를 ID별로 백업합니다.
+        const commentMap = new Map<string, any[]>();
+        state.requests.forEach(req => {
+          if (req.comments && req.comments.length > 0) {
+            commentMap.set(req.id, req.comments);
+          }
+        });
+
+        // 2. 새로 받아온 요청 목록에 백업해둔 댓글 정보를 병합합니다.
+        const mergedRequests = newRequests.map(req => ({
+          ...req,
+          // 중요: 새로운 데이터에 댓글이 없으면(보통 빔), 기존 댓글을 넣어줍니다.
+          comments: commentMap.get(req.id) || [] 
+        }));
+
+        return { requests: mergedRequests };
+      }),
+
       setComments: (requestId, comments) => set((state) => ({
         requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
+        // 선택된 요청 정보(currentRequest)도 같이 업데이트해줍니다.
         currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
       })),
       setColumnDefs: (defs) => set({ columnDefs: defs }),
