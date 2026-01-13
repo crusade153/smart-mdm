@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
   CheckCircle, XCircle, PlayCircle, Lock, Trash2, History,
-  HelpCircle, BookOpen, Loader2, Info 
+  HelpCircle, BookOpen, Loader2, Info, FileText, Copy
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 import { MDM_FORM_SCHEMA, FORM_TABS, FieldMeta } from "@/lib/constants/sap-fields"
 import { useMDMStore } from "@/stores/useMDMStore"
@@ -53,8 +57,11 @@ export function MDMForm() {
   const [commentInput, setCommentInput] = useState("")
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
+
+  // 📝 협조전 팝업 관련 State
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false)
+  const [templateText, setTemplateText] = useState("")
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -109,9 +116,8 @@ export function MDMForm() {
   };
 
   const mtart = form.watch("MTART");
-  const werks = form.watch("WERKS"); // WERKS 감지
+  const werks = form.watch("WERKS"); 
 
-  // 자재유형 연동 로직
   useEffect(() => {
     if (mtart === 'FERT' || mtart === 'ZSET') {
       form.setValue('BESKZ', 'E');
@@ -124,23 +130,18 @@ export function MDMForm() {
     }
   }, [mtart, form]);
 
-  // ✅ [수정] WERKS(플랜트) 값에 따른 LGPRO, LGFSB 자동 세팅 로직
   useEffect(() => {
-    // LGPRO 로직
     if (werks === '1021' || werks === '1022') {
         form.setValue('LGPRO', '2200');
     } else if (werks === '1023') {
         form.setValue('LGPRO', '2301');
     } 
-    // 1031일때는 직접입력이므로 강제 세팅 안함
 
-    // LGFSB 로직 (고정되는 경우만 세팅)
     if (werks === '1022') {
         form.setValue('LGFSB', '2210');
     } else if (werks === '1023') {
         form.setValue('LGFSB', '2301');
     }
-    // 1021, 1031은 선택/입력이므로 자동 세팅 안함
   }, [werks, form]);
 
 
@@ -331,6 +332,50 @@ export function MDMForm() {
     }
   }
 
+  // 📝 협조전 멘트 생성 함수 (옵션 3 + 옵션 1 혼합 + 계층구조 반영)
+  const openTemplateDialog = () => {
+    if (!activeRequest) return;
+
+    // 1. 계층구조 요청 찾기 (코멘트 중 '📂 [계층구조 신규 요청]'이 포함된 것)
+    const hierarchyRequest = activeRequest.comments?.filter(c => c.message.includes('[계층구조 신규 요청]'))
+      .map(c => c.message.replace('📂 [계층구조 신규 요청]', '').trim())
+      .join('\n   - ') || '';
+
+    // 2. 멘트 조합
+    const text = `
+[업무협조의뢰] 신규 자재 코드 생성 요청 [${activeRequest.data.MAKTX || '품명'}]
+
+1. 자재 정보
+   - 자재명: ${activeRequest.data.MAKTX || '-'}
+   - 자재유형: ${activeRequest.data.MTART || '-'}
+   - 기본단위: ${activeRequest.data.MEINS || '-'}
+   - 자재그룹: ${activeRequest.data.MATKL || '-'}
+   - 중량: ${activeRequest.data.NTGEW || '0'} ${activeRequest.data.GEWEI || ''}
+
+2. 관리 정보
+   - 플랜트: ${activeRequest.data.WERKS || '-'}
+   - 저장위치: ${activeRequest.data.LGPRO || '-'}
+   - MRP 관리자: ${activeRequest.data.DISPO || '-'}
+
+${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\n` : ''}
+위 품목에 대해 기준정보 생성 요청드립니다.
+- 요청일: ${activeRequest.createdAt.split('T')[0]}
+- 요청자: ${activeRequest.requesterName}
+
+* 상세 내용은 Smart MDM 시스템에서 확인 부탁드립니다.
+  (링크: ${typeof window !== 'undefined' ? window.location.origin : ''}/main)
+`.trim();
+
+    setTemplateText(text);
+    setIsTemplateOpen(true);
+  }
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(templateText);
+    alert("📋 클립보드에 복사되었습니다.\n결재 시스템에 붙여넣기(Ctrl+V) 하세요.");
+    setIsTemplateOpen(false);
+  }
+
   const renderLabelWithHelp = (field: FieldMeta) => {
     const def = columnDefs[field.key];
 
@@ -388,19 +433,16 @@ export function MDMForm() {
     let isReadOnly = field.fixed || !canEdit;
     if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
 
-    // ✅ 동적 UI 처리 (LGPRO, LGFSB)
     if (field.key === 'LGPRO') {
         if (werks === '1021' || werks === '1022' || werks === '1023') {
-            isReadOnly = true; // 자동 고정이므로 수정 불가
+            isReadOnly = true; 
         }
-        // 1031인 경우는 기본적으로 수정 가능 (readOnly = false)
     }
     
     if (field.key === 'LGFSB') {
         if (werks === '1022' || werks === '1023') {
             isReadOnly = true;
         }
-        // 1021, 1031은 수정/선택 가능
     }
 
     let fieldStyle = "h-9 text-sm ";
@@ -433,7 +475,6 @@ export function MDMForm() {
         )
     }
 
-    // ✅ LGFSB - 1021일 때 선택 박스로 렌더링
     if (field.key === 'LGFSB' && werks === '1021') {
         return (
           <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}>
@@ -530,6 +571,33 @@ export function MDMForm() {
         onClose={() => setIsHistoryOpen(false)} 
       />
 
+      {/* 📋 업무협조의뢰 멘트 팝업 Dialog */}
+      <Dialog open={isTemplateOpen} onOpenChange={setIsTemplateOpen}>
+        <DialogContent className="max-w-xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText size={20} className="text-indigo-600"/> 
+              업무협조의뢰 양식 보기
+            </DialogTitle>
+            <DialogDescription>
+              아래 내용을 복사하여 그룹웨어 협조의뢰 본문에 붙여넣으세요.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Textarea 
+              value={templateText} 
+              readOnly 
+              className="h-[400px] text-sm font-mono bg-slate-50 leading-relaxed resize-none focus-visible:ring-indigo-500"
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={copyToClipboard} className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto gap-2">
+              <Copy size={16}/> 멘트 복사하기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex-1 flex flex-col min-w-0">
         <div className="h-16 border-b bg-white px-6 flex items-center justify-between shrink-0">
           <div className="flex flex-col gap-0.5">
@@ -543,6 +611,13 @@ export function MDMForm() {
           </div>
 
           <div className="flex gap-2">
+            {/* 🆕 협조전 버튼 추가 */}
+            {activeRequest && (
+              <Button variant="outline" className="h-9 text-xs gap-1 text-slate-700 border-slate-300 hover:bg-slate-50" onClick={openTemplateDialog}>
+                <FileText size={14} className="text-indigo-600"/> 협조전
+              </Button>
+            )}
+
             {activeRequest && (
               <Button variant="outline" className="h-9 text-xs gap-1 text-slate-600" onClick={() => setIsHistoryOpen(true)}>
                 <History size={14} /> 이력
