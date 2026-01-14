@@ -49,7 +49,9 @@ export function MDMForm() {
   const { 
     currentRequest, requests, setCurrentRequest, setRequests, createNewRequest,
     setComments, currentUser,
-    columnDefs, setColumnDefs
+    columnDefs, setColumnDefs,
+    // 👇 낙관적 업데이트를 위해 스토어 액션 추가
+    addRequest, updateRequest 
   } = useMDMStore()
   
   const activeRequest = requests.find(r => r.id === currentRequest?.id) || currentRequest;
@@ -100,8 +102,11 @@ export function MDMForm() {
     }
   }, [activeRequest?.comments]);
 
+  // 백그라운드 데이터 동기화 함수
   const refreshData = async (targetId?: string) => {
+    // 1. 최신 데이터 가져오기
     const latestRequests = await getRequestsAction();
+    // 2. 스토어 갱신 (여기서 실제 DB 데이터로 교체됨)
     setRequests(latestRequests);
 
     if (targetId) {
@@ -110,7 +115,8 @@ export function MDMForm() {
         setCurrentRequest(updatedRequest);
         const comments = await getCommentsAction(targetId);
         setComments(targetId, comments);
-        form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
+        // 폼 값도 최신으로 동기화 (선택적)
+        // form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
       }
     }
   };
@@ -165,55 +171,49 @@ export function MDMForm() {
     }
   }, [activeRequest?.id, form, setComments]); 
 
+  // 🚀 낙관적 업데이트가 적용된 onSubmit
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
-    let targetId = activeRequest?.id;
     const actorName = currentUser?.name || 'Unknown';
 
     if (!activeRequest) {
+      // [신규 생성]
       if (!confirm("요청을 등록하시겠습니까?")) return;
       
-      setIsSubmitting(true);
-
-      try {
-        const result = await createRequestAction(data, actorName);
+      // 1. 화면에 즉시 반영 (낙관적 업데이트)
+      addRequest(data); 
+      alert("저장되었습니다. (백그라운드 동기화 중)");
+      
+      // 2. 백그라운드에서 실제 저장 (await 제거)
+      createRequestAction(data, actorName).then(async (result) => {
         if (result.success && result.id) {
-          alert(result.message);
-          targetId = result.id;
-          await refreshData(targetId);
+          // 3. 성공 시 실제 ID로 데이터 교체 (조용히 새로고침)
+          await refreshData(result.id);
+          if (missingFields.length > 0) {
+             await createCommentAction(result.id, `⚠️ [시스템 알림] 필수값이 비어있습니다: ${missingFields.join(', ')}`, "System");
+          }
         } else {
-          alert(result.message);
-          return;
+          alert("저장 실패! 다시 시도해주세요. " + result.message);
         }
-      } catch (error) {
-        console.error(error);
-        alert("저장 중 오류가 발생했습니다.");
-      } finally {
-        setIsSubmitting(false);
-      }
+      });
 
     } else {
-      setIsSubmitting(true);
-      try {
-        const result = await updateRequestAction(activeRequest.id, data, actorName);
-        if (result.success) {
-          alert(result.message);
-          await refreshData(activeRequest.id);
-        } else {
-          alert(result.message);
-        }
-      } catch (error) {
-        console.error(error);
-        alert("수정 중 오류가 발생했습니다.");
-      } finally {
-        setIsSubmitting(false);
-      }
-    }
+      // [수정]
+      // 1. 화면에 즉시 반영
+      updateRequest(activeRequest.id, data);
+      alert("수정되었습니다. (백그라운드 동기화 중)");
 
-    if (missingFields.length > 0 && targetId) {
-      const msg = `⚠️ [시스템 알림] 필수값이 비어있습니다: ${missingFields.join(', ')}`;
-      await createCommentAction(targetId, msg, "System");
-      await refreshData(targetId);
+      // 2. 백그라운드 실제 저장
+      updateRequestAction(activeRequest.id, data, actorName).then(async (result) => {
+        if (result.success) {
+          await refreshData(activeRequest.id);
+          if (missingFields.length > 0) {
+             await createCommentAction(activeRequest.id, `⚠️ [시스템 알림] 필수값이 비어있습니다: ${missingFields.join(', ')}`, "System");
+          }
+        } else {
+          alert("수정 실패! " + result.message);
+        }
+      });
     }
   }
 
@@ -221,6 +221,9 @@ export function MDMForm() {
     if (!activeRequest) return;
     if (!confirm("정말 이 요청을 삭제하시겠습니까?")) return;
 
+    // 1. 화면에서 즉시 삭제 (구현 복잡도 때문에 여기선 로딩만 보여줌)
+    // 삭제는 데이터 정합성이 중요해서 낙관적 업데이트보다는 '확실한 삭제'가 낫습니다.
+    setIsSubmitting(true);
     const result = await deleteRequestAction(activeRequest.id);
     if (result.success) {
         alert(result.message);
@@ -230,15 +233,15 @@ export function MDMForm() {
     } else {
         alert(result.message);
     }
+    setIsSubmitting(false);
   }
 
   const handleHierarchyRequest = async (msg: string) => {
+    // 계층구조 요청도 낙관적으로 처리 가능하지만, 임시저장 로직이 있어 복잡하므로 기존 방식 유지
     let reqId = activeRequest?.id;
     if (!reqId) {
       if(!confirm("계층구조 요청을 위해 현재 내용을 임시 저장합니다.")) return;
-      
       setIsSubmitting(true);
-      
       try {
         const formData = form.getValues();
         const result = await createRequestAction(formData, currentUser?.name || 'Unknown');
@@ -257,13 +260,22 @@ export function MDMForm() {
     await refreshData(reqId);
   }
 
+  // 댓글 전송 (낙관적 업데이트 적용 가능하나, 채팅은 순서가 중요해서 유지)
   const handleSendComment = async () => {
     if (!commentInput.trim() || !activeRequest || !currentUser) return;
     const msg = commentInput;
     const reqId = activeRequest.id;
     setCommentInput("");
+    
+    // 화면에 먼저 보여주기 (임시)
+    const tempComments = [...activeRequest.comments, { writer: currentUser.name, message: msg, createdAt: new Date().toISOString() }];
+    setComments(reqId, tempComments);
+
+    // 서버 전송
     await createCommentAction(reqId, msg, currentUser.name);
-    await refreshData(reqId);
+    // 확실한 동기화를 위해 재조회
+    const realComments = await getCommentsAction(reqId);
+    setComments(reqId, realComments);
   }
 
   const handleStartReview = async () => {
@@ -271,16 +283,19 @@ export function MDMForm() {
     if (!confirm("검토를 시작하시겠습니까? 상태가 '진행(Review)'로 변경됩니다.")) return;
 
     const actor = currentUser?.name || 'Admin';
-    const result = await updateStatusAction(activeRequest.id, 'Review', actor);
     
-    if(result.success) {
-      const msg = "검토를 시작했습니다.";
-      await createCommentAction(activeRequest.id, msg, actor);
-      await refreshData(activeRequest.id);
-      alert("검토 상태로 변경되었습니다.");
-    } else {
-      alert("상태 변경 실패: " + result.message);
-    }
+    // 1. 화면 즉시 반영
+    updateStatusAction(activeRequest.id, 'Review', actor); // 서버 호출 (Fire & Forget)
+    // 2. 로컬 상태 변경 (강제)
+    const updated = requests.map(r => r.id === activeRequest.id ? { ...r, status: 'Review' as const } : r);
+    setRequests(updated);
+    if(currentRequest) setCurrentRequest({ ...currentRequest, status: 'Review' });
+    
+    alert("검토 상태로 변경되었습니다.");
+    
+    // 3. 백그라운드 동기화
+    await createCommentAction(activeRequest.id, "검토를 시작했습니다.", actor);
+    await refreshData(activeRequest.id);
   }
 
   const handleReject = async () => {
@@ -289,54 +304,48 @@ export function MDMForm() {
     if (!reason) return;
 
     const actor = currentUser?.name || 'Admin';
-    const result = await updateStatusAction(activeRequest.id, 'Reject', actor);
+    
+    // 1. 화면 즉시 반영
+    const updated = requests.map(r => r.id === activeRequest.id ? { ...r, status: 'Reject' as const } : r);
+    setRequests(updated);
+    if(currentRequest) setCurrentRequest({ ...currentRequest, status: 'Reject' });
+    alert("반려 처리되었습니다.");
 
-    if(result.success) {
-      const msg = `🚫 반려됨: ${reason}`;
-      await createCommentAction(activeRequest.id, msg, actor);
-      await refreshData(activeRequest.id);
-      alert("반려 처리되었습니다.");
-    } else {
-       alert("반려 처리 실패: " + result.message);
-    }
+    // 2. 서버 전송
+    await updateStatusAction(activeRequest.id, 'Reject', actor);
+    await createCommentAction(activeRequest.id, `🚫 반려됨: ${reason}`, actor);
+    await refreshData(activeRequest.id);
   }
 
   const handleApprove = async () => {
     if (!activeRequest) return;
-    
     const matnrValue = form.getValues("MATNR");
     if (!matnrValue) {
         alert("최종 승인을 위해서는 '자재코드(MATNR)' 입력이 필요합니다.\n기본정보 탭에서 자재코드를 입력해주세요.");
         return;
     }
-
-    if (!confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까? 상태가 '완료(Approved)'로 변경됩니다.`)) return;
+    if (!confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까?`)) return;
 
     const actor = currentUser?.name || 'Admin';
-    const dataUpdateResult = await updateRequestAction(activeRequest.id, { ...activeRequest.data, MATNR: matnrValue }, actor);
     
-    if (!dataUpdateResult.success) {
-        alert("자재코드 저장 중 오류 발생");
-        return;
-    }
+    // 1. 화면 즉시 반영
+    const updated = requests.map(r => r.id === activeRequest.id ? { ...r, status: 'Approved' as const, data: {...r.data, MATNR: matnrValue} } : r);
+    setRequests(updated);
+    if(currentRequest) setCurrentRequest({ ...currentRequest, status: 'Approved', data: {...currentRequest.data, MATNR: matnrValue} });
+    alert("최종 승인(완료) 처리되었습니다.");
 
-    const statusUpdateResult = await updateStatusAction(activeRequest.id, 'Approved', actor);
-
-    if (statusUpdateResult.success) {
-      const msg = `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`;
-      await createCommentAction(activeRequest.id, msg, actor);
-      await refreshData(activeRequest.id);
-      alert("최종 승인(완료) 처리되었습니다.");
-    } else {
-      alert("승인 처리 실패: " + statusUpdateResult.message);
-    }
+    // 2. 서버 전송
+    await updateRequestAction(activeRequest.id, { ...activeRequest.data, MATNR: matnrValue }, actor);
+    await updateStatusAction(activeRequest.id, 'Approved', actor);
+    await createCommentAction(activeRequest.id, `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`, actor);
+    await refreshData(activeRequest.id);
   }
 
-  // 📝 협조전 멘트 생성 함수 (옵션 3 + 옵션 1 혼합 + 계층구조 반영)
+  // 📝 협조전 멘트 생성 함수
   const openTemplateDialog = () => {
     if (!activeRequest) return;
 
-    // 1. 계층구조 요청 찾기 (코멘트 중 '📂 [계층구조 신규 요청]'이 포함된 것)
+    // 1. 계층구조 요청 찾기
     const hierarchyRequest = activeRequest.comments?.filter(c => c.message.includes('[계층구조 신규 요청]'))
       .map(c => c.message.replace('📂 [계층구조 신규 요청]', '').trim())
       .join('\n   - ') || '';
