@@ -142,7 +142,7 @@ export async function getCommentsAction(requestId: string) {
   }
 }
 
-// 5. 요청 수정 (✅ 변경 감지 및 한글화 로직 강화)
+// 5. 요청 수정 (✅ 버그 수정: 최초 입력은 수정 이력에서 제외)
 export async function updateRequestAction(requestId: string, data: SapMasterData, actorName: string) {
   try {
     const sheet = await getSheetByTitle('requests');
@@ -153,35 +153,49 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
 
     // [변경 감지 로직]
     const changes: { field: string, label: string, old: string, new: string }[] = [];
-    
+    let hasUpdates = false; // DB 업데이트가 필요한지 여부 체크
+
     Object.entries(data).forEach(([key, newValue]) => {
         const oldValue = row.get(key);
-        // 값이 서로 다를 경우에만 기록
+        
+        // 값이 서로 다를 경우 수행
         if (String(oldValue || '').trim() !== String(newValue || '').trim()) {
-            changes.push({ 
-                field: key,
-                label: getFieldLabel(key), // 한글 명칭 가져오기
-                old: String(oldValue || '(빔)'), 
-                new: String(newValue || '(빔)') 
-            });
-            // 실제 데이터 업데이트
+            hasUpdates = true; // 값이 바뀌었으므로 저장 필요
+
+            // 🐛 [Fix] 이전 값이 비어있다면(null/undefined/''), 이는 '수정'이 아니라 '최초 입력'입니다.
+            const isInitialEntry = !oldValue || String(oldValue).trim() === '';
+
+            // 1. 실제 데이터 업데이트 (DB에는 무조건 반영)
             row.set(key, newValue);
+
+            // 2. 변경 이력(Audit Log)에는 '기존에 값이 있었는데 바뀐 경우'만 추가
+            if (!isInitialEntry) {
+                changes.push({ 
+                    field: key,
+                    label: getFieldLabel(key), // 한글 명칭
+                    old: String(oldValue || '(빔)'), 
+                    new: String(newValue || '(빔)') 
+                });
+            }
         }
     });
 
-    if (changes.length > 0) {
-        await row.save(); // 데이터 저장
+    // 변경사항(최초 입력 포함)이 하나라도 있다면 저장
+    if (hasUpdates) {
+        await row.save(); 
+    }
 
-        // 변경 이력 저장 (여기서 한글 라벨을 저장합니다)
+    // 이력(수정된 경우)이 있다면 로그 및 코멘트 작성
+    if (changes.length > 0) {
+        // 변경 이력 저장
         await Promise.all(changes.map(change => 
             logAudit(requestId, actorName, 'UPDATE', change.label, change.old, change.new)
         ));
         
-        // [수정] 코멘트 요약 메시지 포맷 개선
+        // 코멘트 요약 메시지
         const changeDetails = changes.map(c => `${c.label}: ${c.old} → ${c.new}`).join(', ');
         const summary = `✏️ [수정] ${changes.length}개 항목 변경 (${changeDetails})`;
         
-        // ✅ 수정됨: System 대신 actorName 사용
         await createCommentAction(requestId, summary, actorName);
     }
 
