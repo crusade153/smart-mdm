@@ -1,28 +1,31 @@
 "use server"
-import { getSheetByTitle } from "@/lib/google-sheets";
+import { supabase } from "@/lib/supabase";
 
-// 로그인 처리
+// 로그인 처리 (Supabase sm_users 조회)
 export async function loginAction(id: string, pw: string) {
   try {
-    const sheet = await getSheetByTitle('users');
-    const rows = await sheet.getRows();
-    
-    const user = rows.find(row => row.get('user_id') === id && row.get('password') === pw);
+    // 💡 Supabase에서 ID/PW 일치하는 유저 찾기
+    const { data, error } = await supabase
+        .from('sm_users')
+        .select('*')
+        .eq('user_id', id)
+        .eq('password', pw)
+        .single(); // 하나만 가져옴
 
-    if (!user) return { success: false, message: "아이디 또는 비밀번호가 틀립니다." };
+    if (error || !data) return { success: false, message: "아이디 또는 비밀번호가 틀립니다." };
     
     // 승인 상태 체크
-    if (user.get('status') !== 'active') {
+    if (data.status !== 'active') {
       return { success: false, message: "관리자 승인 대기 중인 계정입니다." };
     }
 
     return { 
       success: true, 
       user: { 
-        id: user.get('user_id'), 
-        name: user.get('name'), 
-        email: user.get('email'),
-        isAdmin: user.get('role') === 'admin' 
+        id: data.user_id, 
+        name: data.name, 
+        email: data.email,
+        isAdmin: data.role === 'admin' 
       } 
     };
   } catch (e: any) {
@@ -30,20 +33,31 @@ export async function loginAction(id: string, pw: string) {
   }
 }
 
-// 회원가입 신청
+// 회원가입 신청 (Supabase sm_users 저장)
 export async function registerAction(id: string, pw: string, name: string, email: string) {
   try {
-    const sheet = await getSheetByTitle('users');
-    const rows = await sheet.getRows();
+    // ID 중복 체크 (DB단에서 Unique 제약조건이 있지만, 사용자 친화적 메시지를 위해 체크)
+    const { data: existing } = await supabase
+        .from('sm_users')
+        .select('user_id')
+        .eq('user_id', id)
+        .single();
 
-    if (rows.some(row => row.get('user_id') === id)) {
+    if (existing) {
       return { success: false, message: "이미 존재하는 아이디입니다." };
     }
 
     // status: 'pending'으로 저장
-    await sheet.addRow({
-      user_id: id, password: pw, name, email, role: 'user', status: 'pending'
+    const { error } = await supabase.from('sm_users').insert({
+      user_id: id, 
+      password: pw, 
+      name: name, 
+      email: email, 
+      role: 'user', 
+      status: 'pending'
     });
+
+    if (error) throw error;
 
     return { success: true, message: "가입 신청이 완료되었습니다. 관리자 승인 후 이용 가능합니다." };
   } catch (e: any) {
@@ -54,17 +68,19 @@ export async function registerAction(id: string, pw: string, name: string, email
 // (관리자용) 대기중인 사용자 목록 가져오기
 export async function getPendingUsersAction() {
   try {
-    const sheet = await getSheetByTitle('users');
-    const rows = await sheet.getRows();
+    const { data, error } = await supabase
+        .from('sm_users')
+        .select('*')
+        .neq('status', 'active'); // status가 active가 아닌 것 조회
+
+    if (error) throw error;
     
-    return rows
-      .filter(row => row.get('status') !== 'active')
-      .map(row => ({
-          id: row.get('user_id'),
-          name: row.get('name'),
-          email: row.get('email'),
-          status: row.get('status')
-      }));
+    return data.map((row: any) => ({
+          id: row.user_id,
+          name: row.name,
+          email: row.email,
+          status: row.status
+    }));
   } catch (e) {
     console.error(e);
     return [];
@@ -74,16 +90,13 @@ export async function getPendingUsersAction() {
 // (관리자용) 사용자 승인 처리
 export async function approveUserAction(userId: string) {
   try {
-    const sheet = await getSheetByTitle('users');
-    const rows = await sheet.getRows();
-    const userRow = rows.find(row => row.get('user_id') === userId);
+    const { error } = await supabase
+        .from('sm_users')
+        .update({ status: 'active' })
+        .eq('user_id', userId);
 
-    if (userRow) {
-      userRow.set('status', 'active');
-      await userRow.save();
-      return { success: true };
-    }
-    return { success: false, message: "사용자를 찾을 수 없습니다." };
+    if (error) throw error;
+    return { success: true };
   } catch (e: any) {
     return { success: false, message: "승인 처리 중 오류: " + e.message };
   }

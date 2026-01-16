@@ -1,6 +1,7 @@
 "use server"
 
-import { getSheetByTitle } from "@/lib/google-sheets";
+import { supabase } from "@/lib/supabase"; // ✅ Supabase 클라이언트
+import { getSheetByTitle } from "@/lib/google-sheets"; // ✅ 구글 시트 (계층구조/FAQ용 유지)
 import { SapMasterData } from "@/types/mdm";
 import { MDM_FORM_SCHEMA } from "@/lib/constants/sap-fields";
 
@@ -10,7 +11,7 @@ function getFieldLabel(key: string) {
   return field ? field.label : key;
 }
 
-// 0. (내부용) 변경 이력 저장 함수
+// 0. (내부용) 변경 이력 저장 함수 (Supabase)
 async function logAudit(
   requestId: string,
   actorName: string,
@@ -20,39 +21,36 @@ async function logAudit(
   newValue: string
 ) {
   try {
-    const sheet = await getSheetByTitle('audit_logs');
-    await sheet.addRow({
-      log_id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      request_id: requestId,
-      actor_name: actorName,
-      action_type: actionType,
-      field_name: fieldName,
-      old_value: oldValue,
-      new_value: newValue,
-      timestamp: new Date().toISOString(),
+    // 💡 sm_audit_logs 테이블에 insert
+    const { error } = await supabase.from('sm_audit_logs').insert({
+        id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`, // ID 생성
+        request_id: requestId,
+        actor_name: actorName,
+        action_type: actionType,
+        field_name: fieldName,
+        old_value: oldValue,
+        new_value: newValue
     });
+    if (error) console.error("Audit Log DB Error:", error);
   } catch (error) {
     console.error("Audit Log Error:", error);
   }
 }
 
-// 1. 요청 생성 (저장)
+// 1. 요청 생성 (Supabase)
 export async function createRequestAction(data: SapMasterData, requesterName: string) {
   try {
-    const sheet = await getSheetByTitle('requests');
     const newId = `REQ-${Date.now()}`;
-    const now = new Date().toISOString();
 
-    const newRow = {
-      id: newId,
-      status: 'Requested',
-      requester_name: requesterName,
-      created_at: now,
-      completed_at: '',
-      ...data
-    };
+    // 💡 sm_requests 테이블에 insert (SAP 필드는 sap_data 컬럼에 JSON으로 통째로 저장)
+    const { error } = await supabase.from('sm_requests').insert({
+        id: newId,
+        status: 'Requested',
+        requester_name: requesterName,
+        sap_data: data // JSONB 컬럼에 객체 바로 저장
+    });
 
-    await sheet.addRow(newRow);
+    if (error) throw error;
     
     // 생성 로그 기록
     await logAudit(newId, requesterName, 'CREATE', '-', '-', '신규 생성');
@@ -65,54 +63,44 @@ export async function createRequestAction(data: SapMasterData, requesterName: st
   }
 }
 
-// 2. 요청 목록 불러오기
+// 2. 요청 목록 불러오기 (Supabase)
 export async function getRequestsAction() {
   try {
-    const sheet = await getSheetByTitle('requests');
-    const rows = await sheet.getRows();
-    const sortedRows = rows.reverse(); 
+    // 💡 sm_requests 테이블 조회 (작성일 역순 정렬)
+    const { data, error } = await supabase
+        .from('sm_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    const headers = sheet.headerValues; 
+    if (error) throw error;
 
-    const requests = sortedRows.map(row => {
-      const sapData: any = {};
-      const metaKeys = ['id', 'status', 'requester_name', 'created_at', 'completed_at'];
-      
-      headers.forEach((key: string) => {
-        if (!metaKeys.includes(key)) {
-          sapData[key] = row.get(key);
-        }
-      });
+    // DB 데이터를 프론트엔드 포맷(MaterialRequest)으로 변환
+    return data.map((row: any) => ({
+        id: row.id,
+        status: row.status,
+        requesterName: row.requester_name,
+        createdAt: row.created_at,
+        completedAt: row.completed_at,
+        data: row.sap_data, // JSONB -> 객체로 자동 변환됨
+        comments: [] // 댓글은 상세 조회 시 가져옴
+    }));
 
-      return {
-        id: row.get('id'),
-        status: row.get('status'),
-        requesterName: row.get('requester_name'),
-        createdAt: row.get('created_at'),
-        completedAt: row.get('completed_at'),
-        data: sapData,
-        comments: [] 
-      };
-    });
-
-    return requests;
   } catch (error) {
     console.error("Fetch Error:", error);
     return [];
   }
 }
 
-// 3. 코멘트 저장
+// 3. 코멘트 저장 (Supabase)
 export async function createCommentAction(requestId: string, message: string, writer: string) {
   try {
-    const sheet = await getSheetByTitle('comments');
-    await sheet.addRow({
-      comment_id: `CMT-${Date.now()}`,
-      request_id: requestId,
-      writer_name: writer,
-      message: message,
-      created_at: new Date().toISOString()
+    const { error } = await supabase.from('sm_comments').insert({
+        id: `CMT-${Date.now()}`,
+        request_id: requestId,
+        writer_name: writer,
+        message: message
     });
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error("Comment Save Error:", error);
@@ -120,59 +108,54 @@ export async function createCommentAction(requestId: string, message: string, wr
   }
 }
 
-// 4. 코멘트 불러오기
+// 4. 코멘트 불러오기 (Supabase)
 export async function getCommentsAction(requestId: string) {
   try {
-    const sheet = await getSheetByTitle('comments');
-    const rows = await sheet.getRows();
-    
-    const comments = rows
-      .filter(row => row.get('request_id') === requestId)
-      .map(row => ({
-        writer: row.get('writer_name'),
-        message: row.get('message'),
-        createdAt: row.get('created_at')
-      }))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      
-    return comments;
+    const { data, error } = await supabase
+        .from('sm_comments')
+        .select('*')
+        .eq('request_id', requestId)
+        .order('created_at', { ascending: true }); // 오래된 순 정렬
+
+    if (error) throw error;
+
+    return data.map((row: any) => ({
+        writer: row.writer_name,
+        message: row.message,
+        createdAt: row.created_at
+    }));
   } catch (error) {
     console.error("Comment Fetch Error:", error);
     return [];
   }
 }
 
-// 5. 요청 수정 (✅ 버그 수정: 최초 입력은 수정 이력에서 제외)
+// 5. 요청 수정 (Supabase)
 export async function updateRequestAction(requestId: string, data: SapMasterData, actorName: string) {
   try {
-    const sheet = await getSheetByTitle('requests');
-    const rows = await sheet.getRows();
-    const row = rows.find(r => r.get('id') === requestId);
+    // 1. 기존 데이터 가져오기 (비교용)
+    const { data: oldRow, error: fetchError } = await supabase
+        .from('sm_requests')
+        .select('sap_data')
+        .eq('id', requestId)
+        .single();
 
-    if (!row) return { success: false, message: "요청을 찾을 수 없습니다." };
+    if (fetchError || !oldRow) return { success: false, message: "요청을 찾을 수 없습니다." };
 
-    // [변경 감지 로직]
-    const changes: { field: string, label: string, old: string, new: string }[] = [];
-    let hasUpdates = false; // DB 업데이트가 필요한지 여부 체크
+    const oldData = oldRow.sap_data || {};
+    const changes: { label: string, old: string, new: string }[] = [];
 
+    // 2. 변경 감지 로직
     Object.entries(data).forEach(([key, newValue]) => {
-        const oldValue = row.get(key);
+        const oldValue = oldData[key];
         
-        // 값이 서로 다를 경우 수행
+        // 값이 서로 다를 경우
         if (String(oldValue || '').trim() !== String(newValue || '').trim()) {
-            hasUpdates = true; // 값이 바뀌었으므로 저장 필요
-
-            // 🐛 [Fix] 이전 값이 비어있다면(null/undefined/''), 이는 '수정'이 아니라 '최초 입력'입니다.
             const isInitialEntry = !oldValue || String(oldValue).trim() === '';
-
-            // 1. 실제 데이터 업데이트 (DB에는 무조건 반영)
-            row.set(key, newValue);
-
-            // 2. 변경 이력(Audit Log)에는 '기존에 값이 있었는데 바뀐 경우'만 추가
+            // 이력에는 '수정'인 경우만 기록 (최초 입력 제외)
             if (!isInitialEntry) {
                 changes.push({ 
-                    field: key,
-                    label: getFieldLabel(key), // 한글 명칭
+                    label: getFieldLabel(key),
                     old: String(oldValue || '(빔)'), 
                     new: String(newValue || '(빔)') 
                 });
@@ -180,22 +163,24 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
         }
     });
 
-    // 변경사항(최초 입력 포함)이 하나라도 있다면 저장
-    if (hasUpdates) {
-        await row.save(); 
-    }
+    // 3. 데이터 업데이트 (JSONB 통째로 업데이트)
+    // 주의: Supabase update는 덮어쓰기이므로, 기존 데이터와 병합해서 보내야 안전하지만
+    // 현재 폼 로직은 전체 데이터를 보내므로 data를 그대로 저장합니다.
+    const { error: updateError } = await supabase
+        .from('sm_requests')
+        .update({ sap_data: data })
+        .eq('id', requestId);
 
-    // 이력(수정된 경우)이 있다면 로그 및 코멘트 작성
+    if (updateError) throw updateError;
+
+    // 4. 이력 및 코멘트 저장
     if (changes.length > 0) {
-        // 변경 이력 저장
         await Promise.all(changes.map(change => 
             logAudit(requestId, actorName, 'UPDATE', change.label, change.old, change.new)
         ));
         
-        // 코멘트 요약 메시지
         const changeDetails = changes.map(c => `${c.label}: ${c.old} → ${c.new}`).join(', ');
         const summary = `✏️ [수정] ${changes.length}개 항목 변경 (${changeDetails})`;
-        
         await createCommentAction(requestId, summary, actorName);
     }
 
@@ -206,16 +191,16 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
   }
 }
 
-// 6. 요청 삭제
+// 6. 요청 삭제 (Supabase)
 export async function deleteRequestAction(requestId: string) {
   try {
-    const sheet = await getSheetByTitle('requests');
-    const rows = await sheet.getRows();
-    const row = rows.find(r => r.get('id') === requestId);
+    // Cascade 설정 덕분에 requests만 지우면 댓글/로그도 자동 삭제됨
+    const { error } = await supabase
+        .from('sm_requests')
+        .delete()
+        .eq('id', requestId);
 
-    if (!row) return { success: false, message: "요청을 찾을 수 없습니다." };
-
-    await row.delete(); 
+    if (error) throw error;
     return { success: true, message: "삭제되었습니다." };
   } catch (error: any) {
     console.error("Delete Error:", error);
@@ -223,23 +208,32 @@ export async function deleteRequestAction(requestId: string) {
   }
 }
 
-// 7. 요청 상태 변경
+// 7. 요청 상태 변경 (Supabase)
 export async function updateStatusAction(requestId: string, status: string, actorName: string) {
   try {
-    const sheet = await getSheetByTitle('requests');
-    const rows = await sheet.getRows();
-    const row = rows.find(r => r.get('id') === requestId);
+    // 기존 상태 조회
+    const { data: row, error: fetchError } = await supabase
+        .from('sm_requests')
+        .select('status')
+        .eq('id', requestId)
+        .single();
 
-    if (!row) return { success: false, message: "요청을 찾을 수 없습니다." };
+    if (fetchError) throw fetchError;
 
-    const oldStatus = row.get('status');
+    const oldStatus = row.status;
     
     if (oldStatus !== status) {
-        row.set('status', status);
+        const updatePayload: any = { status: status };
         if (status === 'Approved') {
-            row.set('completed_at', new Date().toISOString());
+            updatePayload.completed_at = new Date().toISOString();
         }
-        await row.save(); 
+
+        const { error: updateError } = await supabase
+            .from('sm_requests')
+            .update(updatePayload)
+            .eq('id', requestId);
+
+        if (updateError) throw updateError;
 
         await logAudit(requestId, actorName, 'STATUS_CHANGE', '상태', oldStatus, status);
     }
@@ -252,31 +246,33 @@ export async function updateStatusAction(requestId: string, status: string, acto
   }
 }
 
-// 8. 변경 이력 목록 불러오기
+// 8. 변경 이력 목록 불러오기 (Supabase)
 export async function getAuditLogsAction(requestId: string) {
   try {
-    const sheet = await getSheetByTitle('audit_logs');
-    const rows = await sheet.getRows();
+    const { data, error } = await supabase
+        .from('sm_audit_logs')
+        .select('*')
+        .eq('request_id', requestId)
+        .order('created_at', { ascending: false });
+
+    if (error) throw error;
     
-    return rows
-      .filter(row => row.get('request_id') === requestId)
-      .map(row => ({
-        id: row.get('log_id'),
-        actor: row.get('actor_name'),
-        action: row.get('action_type'),
-        field: row.get('field_name'),
-        oldVal: row.get('old_value'),
-        newVal: row.get('new_value'),
-        timestamp: row.get('timestamp')
-      }))
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return data.map((row: any) => ({
+        id: row.id,
+        actor: row.actor_name,
+        action: row.action_type,
+        field: row.field_name,
+        oldVal: row.old_value,
+        newVal: row.new_value,
+        timestamp: row.created_at
+    }));
   } catch (error) {
     console.error("Audit Fetch Error:", error);
     return [];
   }
 }
 
-// [NEW] 컬럼 설명서 데이터 타입 정의
+// [유지] 컬럼 설명서 데이터 타입 정의
 export interface ColumnDef {
   key: string;
   definition: string;
@@ -284,14 +280,13 @@ export interface ColumnDef {
   risk: string;
 }
 
-// [NEW] 9. 컬럼 설명서(FAQ) 불러오기
+// [유지] 9. 컬럼 설명서(FAQ) 불러오기 (Google Sheets 사용)
 export async function getColumnDefinitionsAction(): Promise<Record<string, ColumnDef>> {
   try {
     const sheet = await getSheetByTitle('column_defs'); 
     const rows = await sheet.getRows();
     
     const defs: Record<string, ColumnDef> = {};
-    
     rows.forEach(row => {
       const key = row.get('field_key');
       if (key) {
@@ -303,7 +298,6 @@ export async function getColumnDefinitionsAction(): Promise<Record<string, Colum
         };
       }
     });
-
     return defs;
   } catch (error) {
     console.error("FAQ Fetch Error (탭 'column_defs' 확인 필요):", error);
@@ -311,7 +305,7 @@ export async function getColumnDefinitionsAction(): Promise<Record<string, Colum
   }
 }
 
-// [NEW] 10. 제품계층구조 불러오기 (구글 시트 연동)
+// [유지] 10. 제품계층구조 불러오기 (Google Sheets 사용)
 export interface HierarchyItem {
   level: number;
   code: string;
@@ -321,16 +315,14 @@ export interface HierarchyItem {
 
 export async function getHierarchyAction(): Promise<HierarchyItem[]> {
   try {
-    // 구글 시트의 '제품계층구조' 탭을 가져옵니다.
     const sheet = await getSheetByTitle('제품계층구조'); 
     const rows = await sheet.getRows();
     
-    // 데이터를 가공하여 반환합니다.
     return rows.map(row => ({
       level: Number(row.get('레벨')),
       code: String(row.get('코드')),
       name: String(row.get('이름')),
-      parent: String(row.get('부모코드') || '') // 부모코드가 없는 경우(L1) 빈 문자열 처리
+      parent: String(row.get('부모코드') || '')
     }));
   } catch (error) {
     console.error("Hierarchy Fetch Error (탭 '제품계층구조' 확인 필요):", error);
