@@ -48,6 +48,48 @@ import {
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
 
+// 💬 14. 채팅 컴포넌트 (외부로 분리하여 재렌더링 시 포커스 유지)
+const ChatComponent = ({ 
+  activeRequest, 
+  currentUser, 
+  commentInput, 
+  setCommentInput, 
+  handleSendComment, 
+  isCommentsLoading,
+  messagesEndRef 
+}: any) => (
+  <div className="flex flex-col h-full">
+    <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
+      <div className="space-y-4">
+        {isCommentsLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div> 
+        : (activeRequest?.comments || []).length === 0 ? <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div>
+        : activeRequest?.comments.map((cmt: any, idx: number) => (
+          <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
+            <div className="flex items-center gap-1 text-[10px] text-slate-400"><span className="font-bold text-slate-600">{cmt.writer}</span><span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
+            <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
+              {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}{cmt.message}
+            </div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+    </div>
+    <div className="p-3 border-t bg-white shrink-0">
+      <div className="flex gap-2">
+        <Input 
+          value={commentInput} 
+          onChange={(e) => setCommentInput(e.target.value)} 
+          placeholder="메시지..." 
+          className="text-xs h-9 bg-slate-50" 
+          onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} 
+          disabled={!activeRequest || activeRequest.id === 'new'} 
+        />
+        <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest || activeRequest.id === 'new'}><Send size={14} /></Button>
+      </div>
+    </div>
+  </div>
+);
+
 export function MDMForm() {
   const { 
     currentRequest, requests, setCurrentRequest, setRequests, createNewRequest,
@@ -56,7 +98,6 @@ export function MDMForm() {
     addRequest, updateRequest 
   } = useMDMStore()
   
-  // 'new' ID인 경우 신규 모드로 인식
   const activeRequest = requests.find(r => r.id === currentRequest?.id) || currentRequest;
   const isNewMode = activeRequest?.id === 'new';
 
@@ -66,8 +107,6 @@ export function MDMForm() {
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
   const [isTemplateOpen, setIsTemplateOpen] = useState(false)
   const [templateText, setTemplateText] = useState("")
-
-  // 📱 채팅창 제어용 State (모바일/노트북용 Drawer)
   const [isChatOpen, setIsChatOpen] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -125,15 +164,17 @@ export function MDMForm() {
     }
   };
 
-  // 4. 자동 완성 로직 (MTART, WERKS 등)
+  // 4. 자동 완성 로직
   const mtart = form.watch("MTART");
   const werks = form.watch("WERKS"); 
 
   useEffect(() => {
     if (mtart === 'FERT' || mtart === 'ZSET') {
       form.setValue('BESKZ', 'E'); form.setValue('BKLAS', '7920'); form.setValue('MLAST', 3);
+      form.setValue('KTGRM', '10'); // 계정지정그룹 10
     } else if (mtart === 'HAWA') {
       form.setValue('BESKZ', 'F'); form.setValue('BKLAS', '3100'); form.setValue('MLAST', 2);
+      form.setValue('KTGRM', '20'); // 계정지정그룹 20
     }
   }, [mtart, form]);
 
@@ -157,15 +198,12 @@ export function MDMForm() {
       };
       loadComments();
     } else {
-      // 신규 모드거나 선택 안됨
       form.reset(generateDefaultValues());
     }
   }, [activeRequest?.id, isNewMode, form, setComments]); 
 
-  // 📱 뒤로가기
   const handleBackToList = () => { setCurrentRequest(null); }
 
-  // 6. 저장 핸들러 (낙관적 업데이트 포함)
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     const actorName = currentUser?.name || 'Unknown';
@@ -203,7 +241,6 @@ export function MDMForm() {
     }
   }
 
-  // 7. 삭제 핸들러
   const handleDelete = async () => {
     if (!activeRequest || isNewMode) return;
     if (!confirm("삭제하시겠습니까?")) return;
@@ -218,7 +255,6 @@ export function MDMForm() {
     setIsSubmitting(false);
   }
 
-  // 8. 계층구조 요청
   const handleHierarchyRequest = async (msg: string) => {
     let reqId = activeRequest?.id;
     if (isNewMode || !reqId) {
@@ -237,20 +273,28 @@ export function MDMForm() {
     await refreshData(reqId);
   }
 
-  // 9. 댓글 전송
+  // 🔥 [복구] handleSendComment 함수 (여기 위치해야 함)
   const handleSendComment = async () => {
     if (!commentInput.trim() || !activeRequest || isNewMode || !currentUser) return;
     const msg = commentInput;
     const reqId = activeRequest.id;
+    
+    // UI 즉시 업데이트 (Optimistic Update)
     setCommentInput("");
-    const tempComments = [...activeRequest.comments, { writer: currentUser.name, message: msg, createdAt: new Date().toISOString() }];
-    setComments(reqId, tempComments);
+    const tempComments = [
+      ...(activeRequest.comments || []), 
+      { writer: currentUser.name, message: msg, createdAt: new Date().toISOString() }
+    ];
+    setComments(reqId, tempComments); // 로컬 스토어 즉시 반영
+
+    // 서버 전송
     await createCommentAction(reqId, msg, currentUser.name);
+    
+    // 최신 데이터 재조회 (확실한 동기화)
     const realComments = await getCommentsAction(reqId);
     setComments(reqId, realComments);
   }
 
-  // 10. 승인/반려 로직
   const handleStartReview = async () => {
     if (!activeRequest || isNewMode) return;
     if (!confirm("검토를 시작하시겠습니까?")) return;
@@ -294,7 +338,6 @@ export function MDMForm() {
     await refreshData(activeRequest.id);
   }
 
-  // 11. 협조전 템플릿
   const openTemplateDialog = () => {
     if (!activeRequest) return;
     const hierarchyRequest = activeRequest.comments?.filter(c => c.message.includes('[계층구조 신규 요청]')).map(c => c.message.replace('📂 [계층구조 신규 요청]', '').trim()).join('\n   - ') || '';
@@ -303,7 +346,6 @@ export function MDMForm() {
   }
   const copyToClipboard = () => { navigator.clipboard.writeText(templateText); alert("복사되었습니다."); setIsTemplateOpen(false); }
 
-  // 12. 라벨 렌더러
   const renderLabelWithHelp = (field: FieldMeta) => {
     const def = columnDefs[field.key];
     return (
@@ -319,7 +361,16 @@ export function MDMForm() {
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0 overflow-hidden shadow-xl border-indigo-100" side="right" align="start">
               <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex items-center gap-2"><BookOpen size={16} className="text-indigo-600"/><h4 className="font-bold text-indigo-900 text-sm">{field.label}</h4></div>
-              <div className="p-4 space-y-3 bg-white text-xs"><p className="text-slate-600">{def.definition}</p></div>
+              <div className="p-4 space-y-3 bg-white text-xs">
+                <p className="text-slate-600 font-medium">{def.definition}</p>
+                {/* 🚨 Risk Factor 표시 복구 */}
+                {def.risk && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded text-red-700">
+                    <span className="font-bold block mb-1">⚠️ 미입력/오류 리스크</span>
+                    {def.risk}
+                  </div>
+                )}
+              </div>
             </PopoverContent>
           </Popover>
         )}
@@ -327,12 +378,10 @@ export function MDMForm() {
     );
   };
 
-  // 13. 입력 필드 렌더러 (FIXED: werks || '' 추가)
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     let isReadOnly = field.fixed || !canEdit;
     if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
     
-    // ✅ 여기 수정됨: includes(werks || '')로 안전하게 처리
     if (
       (field.key === 'LGPRO' && ['1021','1022','1023'].includes(werks || '')) || 
       (field.key === 'LGFSB' && ['1022','1023'].includes(werks || ''))
@@ -348,40 +397,36 @@ export function MDMForm() {
     if (field.key === 'MATNR') return <FormControl><div className="flex gap-2 w-full"><Input {...fieldProps} value={fieldProps.value || ''} readOnly={isReadOnly} className={fieldStyle} />{isReadOnly && <Lock size={14} className="text-slate-400"/>}</div></FormControl>;
     if (field.key === 'LGFSB' && werks === '1021') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent><SelectItem value="2101">2101 냉동</SelectItem><SelectItem value="2102">2102 냉장</SelectItem><SelectItem value="2103">2103 상온</SelectItem></SelectContent></Select>;
     if (field.type === 'custom_prdha') return <FormControl><div className={isReadOnly ? "pointer-events-none opacity-60" : "w-full"}><HierarchySelector value={fieldProps.value} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /></div></FormControl>;
-    if (field.type === 'select' && field.options) return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{Object.entries(field.options).map(([k, v]) => <SelectItem key={k} value={k}>{String(v)}</SelectItem>)}</SelectContent></Select>;
+    
+    // 🚨 Select 빈 값 처리
+    if (field.type === 'select' && field.options) {
+      return (
+        <Select 
+          onValueChange={(val) => fieldProps.onChange(val === '_EMPTY_' ? '' : val)} 
+          value={fieldProps.value === '' ? '_EMPTY_' : String(fieldProps.value || '')} 
+          disabled={isReadOnly}
+        >
+          <FormControl>
+            <SelectTrigger className={fieldStyle}>
+              <SelectValue placeholder="선택" />
+            </SelectTrigger>
+          </FormControl>
+          <SelectContent>
+            {Object.entries(field.options).map(([k, v]) => (
+              <SelectItem key={k} value={k === '' ? '_EMPTY_' : k}>
+                {String(v)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+
     if (field.type === 'ref_select' && field.refKey) return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{(MOCK_REF_DATA as any)[field.refKey]?.map((item: any) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
     if (field.type === 'custom_matkl') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{MOCK_MAT_GROUP.map((item) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
     return <FormControl><Input {...fieldProps} value={fieldProps.value || ''} type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} readOnly={isReadOnly} className={fieldStyle} /></FormControl>;
   }
 
-  // 💬 14. 채팅 컴포넌트 (공통 사용)
-  const ChatComponent = () => (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
-        <div className="space-y-4">
-          {isCommentsLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div> 
-          : (activeRequest?.comments || []).length === 0 ? <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div>
-          : activeRequest?.comments.map((cmt, idx) => (
-            <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
-              <div className="flex items-center gap-1 text-[10px] text-slate-400"><span className="font-bold text-slate-600">{cmt.writer}</span><span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
-              <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
-                {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}{cmt.message}
-              </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
-      <div className="p-3 border-t bg-white shrink-0">
-        <div className="flex gap-2">
-          <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="메시지..." className="text-xs h-9 bg-slate-50" onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} disabled={!activeRequest || isNewMode} />
-          <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest || isNewMode}><Send size={14} /></Button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // 🔴 PC에서 아무것도 선택 안 된 상태 처리
   if (!activeRequest && !currentRequest) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
@@ -397,24 +442,29 @@ export function MDMForm() {
     <div className="flex h-full bg-slate-50/50 w-full overflow-hidden">
       <AuditLogDialog requestId={activeRequest?.id || null} isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
       
-      {/* 협조전 다이얼로그 */}
       <Dialog open={isTemplateOpen} onOpenChange={setIsTemplateOpen}>
         <DialogContent className="max-w-xl bg-white"><DialogHeader><DialogTitle className="flex items-center gap-2"><FileText size={20} className="text-indigo-600"/> 업무협조의뢰 양식</DialogTitle><DialogDescription>협조의뢰 본문에 붙여넣으세요.</DialogDescription></DialogHeader><div className="py-2"><Textarea value={templateText} readOnly className="h-[400px] text-sm font-mono bg-slate-50 leading-relaxed resize-none"/></div><DialogFooter><Button onClick={copyToClipboard} className="bg-indigo-600 w-full sm:w-auto gap-2"><Copy size={16}/> 복사</Button></DialogFooter></DialogContent>
       </Dialog>
 
-      {/* 📱 모바일/노트북용 채팅 Sheet */}
+      {/* 모바일/태블릿용 채팅 슬라이드 (Sheet) */}
       <Sheet open={isChatOpen} onOpenChange={setIsChatOpen}>
         <SheetContent className="w-[340px] sm:w-[400px] p-0 flex flex-col bg-white" side="right">
           <SheetHeader className="p-4 border-b shrink-0"><SheetTitle className="text-sm flex items-center gap-2"><MessageSquare size={16}/> 메시지 히스토리</SheetTitle></SheetHeader>
           <div className="flex-1 overflow-hidden h-full">
-            <ChatComponent />
+            <ChatComponent 
+              activeRequest={activeRequest} 
+              currentUser={currentUser} 
+              commentInput={commentInput} 
+              setCommentInput={setCommentInput} 
+              handleSendComment={handleSendComment} 
+              isCommentsLoading={isCommentsLoading} 
+              messagesEndRef={messagesEndRef}
+            />
           </div>
         </SheetContent>
       </Sheet>
 
       <div className="flex-1 flex flex-col min-w-0 w-full">
-        
-        {/* 헤더 */}
         <div className="h-14 md:h-16 border-b bg-white px-4 md:px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 overflow-hidden">
             <Button variant="ghost" size="icon" className="md:hidden mr-1 -ml-2 text-slate-500" onClick={handleBackToList}><ArrowLeft size={20} /></Button>
@@ -472,7 +522,6 @@ export function MDMForm() {
           </div>
         </div>
 
-        {/* 폼 본문 */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <Form {...form}>
             {isNewMode && <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 text-xs text-blue-700 text-center"><Info size={12} className="inline mr-1"/> 신규 작성 모드입니다.</div>}
@@ -488,7 +537,6 @@ export function MDMForm() {
                 {FORM_TABS.map((tab) => (
                   <TabsContent key={tab.id} value={tab.id} className="mt-0">
                     <Card className="p-4 md:p-6 border-slate-200 shadow-sm">
-                      {/* 🛠️ 반응형 레이아웃: 기본 1열, PC(xl)부터 2열 */}
                       <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
                         {MDM_FORM_SCHEMA.filter(f => f.tab === tab.id).map((field) => (
                           <div key={field.key} className={field.type === 'custom_prdha' ? 'col-span-full' : ''}>
@@ -513,13 +561,21 @@ export function MDMForm() {
         </div>
       </div>
 
-      {/* 🖥️ 우측 고정 채팅 (2xl 이상) */}
+      {/* PC(2xl 이상)용 우측 고정 채팅 패널 */}
       {activeRequest && !isNewMode && (
         <div className="hidden 2xl:flex w-[320px] border-l border-slate-200 bg-white flex-col shrink-0">
           <div className="h-16 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
             <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm"><MessageSquare size={16}/> 메시지 히스토리</h3>
           </div>
-          <ChatComponent />
+          <ChatComponent 
+            activeRequest={activeRequest} 
+            currentUser={currentUser} 
+            commentInput={commentInput} 
+            setCommentInput={setCommentInput} 
+            handleSendComment={handleSendComment} 
+            isCommentsLoading={isCommentsLoading} 
+            messagesEndRef={messagesEndRef}
+          />
         </div>
       )}
     </div>

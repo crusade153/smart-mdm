@@ -75,9 +75,11 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'MSTDV', label: '유통상태시작일', tab: 'sales', type: 'date', fixed: true },
   { key: 'VERSG', label: '자재통계그룹', tab: 'sales', type: 'text', fixed: true },
   { key: 'KONDM', label: '자재가격그룹', tab: 'sales', type: 'number', fixed: true },
-  { key: 'KTGRM', label: '계정지정그룹', tab: 'sales', type: 'text', defaultValue: '10', fixed: true },
-  { key: 'MVGR1', label: '자재그룹1', tab: 'sales', type: 'text', fixed: true },
   
+  // 🚨 [수정] KTGRM: fixed이지만 로직에 의해 값 변경됨
+  { key: 'KTGRM', label: '계정지정그룹', tab: 'sales', type: 'text', fixed: true }, 
+  
+  { key: 'MVGR1', label: '자재그룹1', tab: 'sales', type: 'text', fixed: true },
   { 
     key: 'MVGR2', label: '자재그룹2', tab: 'sales', type: 'select', required: true,
     options: {
@@ -95,7 +97,13 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
 
   { key: 'MVGR4', label: '자재그룹4', tab: 'sales', type: 'text', fixed: true },
   { key: 'MVGR5', label: '자재그룹5', tab: 'sales', type: 'text', fixed: true },
-  { key: 'PRAT1', label: '온라인물류센터 전송여부', tab: 'sales', type: 'text', fixed: true },
+  
+  // 🚨 [수정] PRAT1: 필수, 선택형(X 또는 빈값), 입력 가능
+  { 
+    key: 'PRAT1', label: '온라인물류센터 전송여부', tab: 'sales', type: 'select', required: true, 
+    options: { '': '미전송 (빈값)', 'X': '전송 (X)' }
+  },
+  
   { key: 'PRAT2', label: '제품속성2', tab: 'sales', type: 'text', fixed: true },
   { key: 'PRAT3', label: '제품속성3', tab: 'sales', type: 'text', fixed: true },
   { key: 'PRAT4', label: '제품속성4', tab: 'sales', type: 'text', fixed: true },
@@ -130,12 +138,11 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'BSTFE', label: '고정로트크기', tab: 'mrp', type: 'text', fixed: true },
   { key: 'BSTRF', label: '반올림값', tab: 'mrp', type: 'text', fixed: true },
   { key: 'BESKZ', label: '조달유형', tab: 'mrp', type: 'text', required: true, defaultValue: 'E', fixed: true },
-  { key: 'SOBSL', label: '특별조달유형', tab: 'mrp', type: 'text', fixed: true },
   
-  // ✅ [수정] LGPRO: 생산저장위치 (동적 제어를 위해 기본값 제거, 일반 텍스트 타입)
+  // 🚨 [수정] SOBSL: fixed 제거 (입력 가능)
+  { key: 'SOBSL', label: '특별조달유형', tab: 'mrp', type: 'text' },
+  
   { key: 'LGPRO', label: '생산저장위치', tab: 'mrp', type: 'text', required: true },
-  
-  // ✅ [수정] LGFSB: EP저장위치 (동적 제어를 위해 ref_select 제거, 일반 텍스트 타입)
   { key: 'LGFSB', label: 'EP저장위치', tab: 'mrp', type: 'text', required: true },
 
   { key: 'KZKUP', label: '연산품', tab: 'mrp', type: 'text', fixed: true },
