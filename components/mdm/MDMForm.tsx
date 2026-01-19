@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
   CheckCircle, XCircle, PlayCircle, Lock, Trash2, History,
-  HelpCircle, BookOpen, Loader2, Info, FileText, Copy
+  HelpCircle, BookOpen, Loader2, Info, FileText, Copy, ArrowLeft 
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from "@/components/ui/dialog"
+import { 
+  Sheet, SheetContent, SheetHeader, SheetTitle 
+} from "@/components/ui/sheet" 
 import { Textarea } from "@/components/ui/textarea"
 
 import { MDM_FORM_SCHEMA, FORM_TABS, FieldMeta } from "@/lib/constants/sap-fields"
@@ -50,7 +53,6 @@ export function MDMForm() {
     currentRequest, requests, setCurrentRequest, setRequests, createNewRequest,
     setComments, currentUser,
     columnDefs, setColumnDefs,
-    // 👇 낙관적 업데이트를 위해 스토어 액션 추가
     addRequest, updateRequest 
   } = useMDMStore()
   
@@ -60,13 +62,15 @@ export function MDMForm() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
-
-  // 📝 협조전 팝업 관련 State
   const [isTemplateOpen, setIsTemplateOpen] = useState(false)
   const [templateText, setTemplateText] = useState("")
 
+  // 📱 채팅창 제어용 State (모바일/노트북용)
+  const [isChatOpen, setIsChatOpen] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // 1. 컬럼 설명(FAQ) 데이터 로드
   useEffect(() => {
     if (Object.keys(columnDefs).length === 0) {
       getColumnDefinitionsAction().then(data => setColumnDefs(data));
@@ -96,17 +100,16 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
+  // 2. 채팅 스크롤 하단 고정
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [activeRequest?.comments]);
+  }, [activeRequest?.comments, isChatOpen]);
 
-  // 백그라운드 데이터 동기화 함수
+  // 3. 데이터 동기화 함수
   const refreshData = async (targetId?: string) => {
-    // 1. 최신 데이터 가져오기
     const latestRequests = await getRequestsAction();
-    // 2. 스토어 갱신 (여기서 실제 DB 데이터로 교체됨)
     setRequests(latestRequests);
 
     if (targetId) {
@@ -115,12 +118,11 @@ export function MDMForm() {
         setCurrentRequest(updatedRequest);
         const comments = await getCommentsAction(targetId);
         setComments(targetId, comments);
-        // 폼 값도 최신으로 동기화 (선택적)
-        // form.reset({ ...generateDefaultValues(), ...updatedRequest.data });
       }
     }
   };
 
+  // 4. 자동 완성 로직 (MTART, WERKS) - [✅ 기능 보존 확인]
   const mtart = form.watch("MTART");
   const werks = form.watch("WERKS"); 
 
@@ -150,7 +152,7 @@ export function MDMForm() {
     }
   }, [werks, form]);
 
-
+  // 5. 폼 데이터 초기화 및 댓글 로드
   useEffect(() => {
     if (activeRequest) {
       form.reset({ ...generateDefaultValues(), ...activeRequest.data });
@@ -164,30 +166,29 @@ export function MDMForm() {
           setIsCommentsLoading(false);
         }
       };
-      
       loadComments();
     } else {
       form.reset(generateDefaultValues());
     }
   }, [activeRequest?.id, form, setComments]); 
 
-  // 🚀 낙관적 업데이트가 적용된 onSubmit
+  // 📱 모바일 뒤로가기 핸들러
+  const handleBackToList = () => {
+    setCurrentRequest(null);
+  }
+
+  // 6. 저장(Submit) 핸들러
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
     const actorName = currentUser?.name || 'Unknown';
 
     if (!activeRequest) {
-      // [신규 생성]
       if (!confirm("요청을 등록하시겠습니까?")) return;
-      
-      // 1. 화면에 즉시 반영 (낙관적 업데이트)
       addRequest(data); 
-      alert("저장되었습니다. (백그라운드 동기화 중)");
+      alert("저장되었습니다.");
       
-      // 2. 백그라운드에서 실제 저장 (await 제거)
       createRequestAction(data, actorName).then(async (result) => {
         if (result.success && result.id) {
-          // 3. 성공 시 실제 ID로 데이터 교체 (조용히 새로고침)
           await refreshData(result.id);
           if (missingFields.length > 0) {
              await createCommentAction(result.id, `⚠️ [시스템 알림] 필수값이 비어있습니다: ${missingFields.join(', ')}`, "System");
@@ -198,12 +199,9 @@ export function MDMForm() {
       });
 
     } else {
-      // [수정]
-      // 1. 화면에 즉시 반영
       updateRequest(activeRequest.id, data);
-      alert("수정되었습니다. (백그라운드 동기화 중)");
+      alert("수정되었습니다.");
 
-      // 2. 백그라운드 실제 저장
       updateRequestAction(activeRequest.id, data, actorName).then(async (result) => {
         if (result.success) {
           await refreshData(activeRequest.id);
@@ -217,12 +215,11 @@ export function MDMForm() {
     }
   }
 
+  // 7. 삭제 핸들러
   const handleDelete = async () => {
     if (!activeRequest) return;
     if (!confirm("정말 이 요청을 삭제하시겠습니까?")) return;
 
-    // 1. 화면에서 즉시 삭제 (구현 복잡도 때문에 여기선 로딩만 보여줌)
-    // 삭제는 데이터 정합성이 중요해서 낙관적 업데이트보다는 '확실한 삭제'가 낫습니다.
     setIsSubmitting(true);
     const result = await deleteRequestAction(activeRequest.id);
     if (result.success) {
@@ -236,8 +233,8 @@ export function MDMForm() {
     setIsSubmitting(false);
   }
 
+  // 8. 계층구조 요청 핸들러
   const handleHierarchyRequest = async (msg: string) => {
-    // 계층구조 요청도 낙관적으로 처리 가능하지만, 임시저장 로직이 있어 복잡하므로 기존 방식 유지
     let reqId = activeRequest?.id;
     if (!reqId) {
       if(!confirm("계층구조 요청을 위해 현재 내용을 임시 저장합니다.")) return;
@@ -260,40 +257,34 @@ export function MDMForm() {
     await refreshData(reqId);
   }
 
-  // 댓글 전송 (낙관적 업데이트 적용 가능하나, 채팅은 순서가 중요해서 유지)
+  // 9. 댓글 전송 핸들러
   const handleSendComment = async () => {
     if (!commentInput.trim() || !activeRequest || !currentUser) return;
     const msg = commentInput;
     const reqId = activeRequest.id;
     setCommentInput("");
     
-    // 화면에 먼저 보여주기 (임시)
     const tempComments = [...activeRequest.comments, { writer: currentUser.name, message: msg, createdAt: new Date().toISOString() }];
     setComments(reqId, tempComments);
 
-    // 서버 전송
     await createCommentAction(reqId, msg, currentUser.name);
-    // 확실한 동기화를 위해 재조회
     const realComments = await getCommentsAction(reqId);
     setComments(reqId, realComments);
   }
 
+  // 10. 승인/반려 프로세스 핸들러
   const handleStartReview = async () => {
     if (!activeRequest) return;
-    if (!confirm("검토를 시작하시겠습니까? 상태가 '진행(Review)'로 변경됩니다.")) return;
+    if (!confirm("검토를 시작하시겠습니까?")) return;
 
     const actor = currentUser?.name || 'Admin';
-    
-    // 1. 화면 즉시 반영
-    updateStatusAction(activeRequest.id, 'Review', actor); // 서버 호출 (Fire & Forget)
-    // 2. 로컬 상태 변경 (강제)
+    updateStatusAction(activeRequest.id, 'Review', actor); 
     const updated = requests.map(r => r.id === activeRequest.id ? { ...r, status: 'Review' as const } : r);
     setRequests(updated);
     if(currentRequest) setCurrentRequest({ ...currentRequest, status: 'Review' });
     
     alert("검토 상태로 변경되었습니다.");
     
-    // 3. 백그라운드 동기화
     await createCommentAction(activeRequest.id, "검토를 시작했습니다.", actor);
     await refreshData(activeRequest.id);
   }
@@ -304,14 +295,11 @@ export function MDMForm() {
     if (!reason) return;
 
     const actor = currentUser?.name || 'Admin';
-    
-    // 1. 화면 즉시 반영
     const updated = requests.map(r => r.id === activeRequest.id ? { ...r, status: 'Reject' as const } : r);
     setRequests(updated);
     if(currentRequest) setCurrentRequest({ ...currentRequest, status: 'Reject' });
     alert("반려 처리되었습니다.");
 
-    // 2. 서버 전송
     await updateStatusAction(activeRequest.id, 'Reject', actor);
     await createCommentAction(activeRequest.id, `🚫 반려됨: ${reason}`, actor);
     await refreshData(activeRequest.id);
@@ -321,36 +309,30 @@ export function MDMForm() {
     if (!activeRequest) return;
     const matnrValue = form.getValues("MATNR");
     if (!matnrValue) {
-        alert("최종 승인을 위해서는 '자재코드(MATNR)' 입력이 필요합니다.\n기본정보 탭에서 자재코드를 입력해주세요.");
+        alert("최종 승인을 위해서는 '자재코드(MATNR)' 입력이 필요합니다.");
         return;
     }
     if (!confirm(`자재코드 [${matnrValue}]로 최종 승인하시겠습니까?`)) return;
 
     const actor = currentUser?.name || 'Admin';
-    
-    // 1. 화면 즉시 반영
     const updated = requests.map(r => r.id === activeRequest.id ? { ...r, status: 'Approved' as const, data: {...r.data, MATNR: matnrValue} } : r);
     setRequests(updated);
     if(currentRequest) setCurrentRequest({ ...currentRequest, status: 'Approved', data: {...currentRequest.data, MATNR: matnrValue} });
     alert("최종 승인(완료) 처리되었습니다.");
 
-    // 2. 서버 전송
     await updateRequestAction(activeRequest.id, { ...activeRequest.data, MATNR: matnrValue }, actor);
     await updateStatusAction(activeRequest.id, 'Approved', actor);
     await createCommentAction(activeRequest.id, `✅ 최종 승인 완료 (SAP Code: ${matnrValue})`, actor);
     await refreshData(activeRequest.id);
   }
 
-  // 📝 협조전 멘트 생성 함수
+  // 11. 협조전 템플릿 로직
   const openTemplateDialog = () => {
     if (!activeRequest) return;
-
-    // 1. 계층구조 요청 찾기
     const hierarchyRequest = activeRequest.comments?.filter(c => c.message.includes('[계층구조 신규 요청]'))
       .map(c => c.message.replace('📂 [계층구조 신규 요청]', '').trim())
       .join('\n   - ') || '';
 
-    // 2. 멘트 조합
     const text = `
 [업무협조의뢰] 신규 자재 코드 생성 요청 [${activeRequest.data.MAKTX || '품명'}]
 
@@ -370,9 +352,6 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
 위 품목에 대해 기준정보 생성 요청드립니다.
 - 요청일: ${activeRequest.createdAt.split('T')[0]}
 - 요청자: ${activeRequest.requesterName}
-
-* 상세 내용은 Smart MDM 시스템에서 확인 부탁드립니다.
-  (링크: ${typeof window !== 'undefined' ? window.location.origin : ''}/main)
 `.trim();
 
     setTemplateText(text);
@@ -381,13 +360,13 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(templateText);
-    alert("📋 클립보드에 복사되었습니다.\n결재 시스템에 붙여넣기(Ctrl+V) 하세요.");
+    alert("📋 클립보드에 복사되었습니다.");
     setIsTemplateOpen(false);
   }
 
+  // 12. 라벨 렌더링 (도움말 포함)
   const renderLabelWithHelp = (field: FieldMeta) => {
     const def = columnDefs[field.key];
-
     return (
       <div className="flex items-center gap-1.5 mb-1.5">
         <FormLabel className="text-[11px] font-bold text-slate-500 flex items-center m-0">
@@ -409,26 +388,13 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
               </div>
               <div className="p-4 space-y-3 bg-white text-xs">
                 {def.definition && (
-                  <div>
-                    <span className="font-bold text-slate-700 block mb-1">📖 정의</span>
-                    <p className="text-slate-600 leading-relaxed">{def.definition}</p>
-                  </div>
+                  <div><span className="font-bold text-slate-700 block mb-1">📖 정의</span><p className="text-slate-600 leading-relaxed">{def.definition}</p></div>
                 )}
                 {def.usage && (
-                  <div>
-                    <span className="font-bold text-slate-700 block mb-1">💡 용도 및 예시</span>
-                    <p className="text-slate-600 leading-relaxed bg-slate-50 p-2 rounded">{def.usage}</p>
-                  </div>
+                  <div><span className="font-bold text-slate-700 block mb-1">💡 용도 및 예시</span><p className="text-slate-600 leading-relaxed bg-slate-50 p-2 rounded">{def.usage}</p></div>
                 )}
                 {def.risk && (
-                  <div>
-                    <span className="font-bold text-red-600 block mb-1 flex items-center gap-1">
-                      <AlertTriangle size={12}/> 오입력 시 리스크
-                    </span>
-                    <p className="text-red-500 leading-relaxed bg-red-50 p-2 rounded border border-red-100">
-                      {def.risk}
-                    </p>
-                  </div>
+                  <div><span className="font-bold text-red-600 block mb-1 flex items-center gap-1"><AlertTriangle size={12}/> 오입력 시 리스크</span><p className="text-red-500 leading-relaxed bg-red-50 p-2 rounded border border-red-100">{def.risk}</p></div>
                 )}
               </div>
             </PopoverContent>
@@ -438,23 +404,19 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
     );
   };
 
+  // 13. 입력 필드 렌더링
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     let isReadOnly = field.fixed || !canEdit;
     if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
 
     if (field.key === 'LGPRO') {
-        if (werks === '1021' || werks === '1022' || werks === '1023') {
-            isReadOnly = true; 
-        }
+        if (werks === '1021' || werks === '1022' || werks === '1023') isReadOnly = true; 
     }
-    
     if (field.key === 'LGFSB') {
-        if (werks === '1022' || werks === '1023') {
-            isReadOnly = true;
-        }
+        if (werks === '1022' || werks === '1023') isReadOnly = true;
     }
 
-    let fieldStyle = "h-9 text-sm ";
+    let fieldStyle = "h-9 text-sm w-full ";
     if (isReadOnly || field.fixed) {
       if (field.defaultValue !== undefined && field.defaultValue !== '' || (field.key === 'LGPRO' && isReadOnly) || (field.key === 'LGFSB' && isReadOnly)) {
         fieldStyle += "bg-blue-50 text-blue-700 font-semibold border-blue-200 cursor-not-allowed";
@@ -470,13 +432,13 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
     if (field.key === 'MATNR') {
         return (
             <FormControl>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full">
                     <Input 
                         {...fieldProps} 
                         value={fieldProps.value || ''}
                         placeholder={canEditSapCode ? "SAP 코드 입력" : "채번 대기중"}
                         readOnly={isReadOnly}
-                        className={`h-9 text-sm ${canEditSapCode ? "bg-white border-indigo-300 ring-2 ring-indigo-100 font-bold text-indigo-700" : "bg-slate-100 text-slate-400"}`}
+                        className={`h-9 text-sm w-full ${canEditSapCode ? "bg-white border-indigo-300 ring-2 ring-indigo-100 font-bold text-indigo-700" : "bg-slate-100 text-slate-400"}`}
                     />
                     {isReadOnly && <Lock size={14} className="text-slate-400 self-center shrink-0"/>}
                 </div>
@@ -504,7 +466,7 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
     if (field.type === 'custom_prdha') {
         return ( 
             <FormControl> 
-                <div className={isReadOnly ? "pointer-events-none opacity-60" : ""}>
+                <div className={isReadOnly ? "pointer-events-none opacity-60" : "w-full"}>
                     <HierarchySelector value={fieldProps.value} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /> 
                 </div>
             </FormControl> 
@@ -572,70 +534,131 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
     );
   }
 
+  // 14. 채팅 컴포넌트 (공통)
+  const ChatComponent = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
+        <div className="space-y-4">
+          {isCommentsLoading ? (
+              <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div>
+          ) : !activeRequest ? ( 
+              <div className="text-center text-slate-400 text-xs mt-10">요청을 선택하세요.</div> 
+          ) : (activeRequest.comments || []).length === 0 ? ( 
+              <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div> 
+          ) : (
+            (activeRequest.comments || []).map((cmt, idx) => (
+              <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
+                <div className="flex items-center gap-1 text-[10px] text-slate-400"><span className="font-bold text-slate-600">{cmt.writer}</span><span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
+                <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
+                  {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}{cmt.message}
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+      <div className="p-3 border-t bg-white shrink-0">
+        <div className="flex gap-2">
+          <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="메시지 입력..." className="text-xs h-9 bg-slate-50" onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} disabled={!activeRequest} />
+          <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest}><Send size={14} /></Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex h-full bg-slate-50/50">
+    <div className="flex h-full bg-slate-50/50 w-full overflow-hidden">
       <AuditLogDialog 
         requestId={activeRequest?.id || null} 
         isOpen={isHistoryOpen} 
         onClose={() => setIsHistoryOpen(false)} 
       />
 
-      {/* 📋 업무협조의뢰 멘트 팝업 Dialog */}
       <Dialog open={isTemplateOpen} onOpenChange={setIsTemplateOpen}>
         <DialogContent className="max-w-xl bg-white">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText size={20} className="text-indigo-600"/> 
-              업무협조의뢰 양식 보기
-            </DialogTitle>
-            <DialogDescription>
-              아래 내용을 복사하여 그룹웨어 협조의뢰 본문에 붙여넣으세요.
-            </DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><FileText size={20} className="text-indigo-600"/> 업무협조의뢰 양식</DialogTitle>
+            <DialogDescription>그룹웨어 협조의뢰 본문에 붙여넣으세요.</DialogDescription>
           </DialogHeader>
           <div className="py-2">
-            <Textarea 
-              value={templateText} 
-              readOnly 
-              className="h-[400px] text-sm font-mono bg-slate-50 leading-relaxed resize-none focus-visible:ring-indigo-500"
-            />
+            <Textarea value={templateText} readOnly className="h-[400px] text-sm font-mono bg-slate-50 leading-relaxed resize-none"/>
           </div>
           <DialogFooter>
-            <Button onClick={copyToClipboard} className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto gap-2">
-              <Copy size={16}/> 멘트 복사하기
-            </Button>
+            <Button onClick={copyToClipboard} className="bg-indigo-600 w-full sm:w-auto gap-2"><Copy size={16}/> 멘트 복사</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="h-16 border-b bg-white px-6 flex items-center justify-between shrink-0">
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <h2 className="font-bold text-lg text-slate-800">{activeRequest ? '상세 정보' : '신규 요청'}</h2>
-              <span className={`text-[10px] px-2 py-0.5 rounded select-none border transition-colors cursor-default ${currentUser?.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                  {currentUser?.isAdmin ? '👑 관리자 계정' : '👤 일반 사용자'}
-              </span>
+      {/* 📱 모바일/노트북용 채팅 Sheet */}
+      <Sheet open={isChatOpen} onOpenChange={setIsChatOpen}>
+        <SheetContent className="w-[340px] sm:w-[400px] p-0 flex flex-col bg-white" side="right">
+          <SheetHeader className="p-4 border-b shrink-0"><SheetTitle className="text-sm flex items-center gap-2"><MessageSquare size={16}/> 메시지 히스토리</SheetTitle></SheetHeader>
+          <div className="flex-1 overflow-hidden h-full">
+            <ChatComponent />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex-1 flex flex-col min-w-0 w-full">
+        
+        {/* 헤더 */}
+        <div className="h-14 md:h-16 border-b bg-white px-4 md:px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 overflow-hidden">
+            {/* 모바일 뒤로가기 버튼 */}
+            <Button 
+                variant="ghost" 
+                size="icon" 
+                className="md:hidden mr-1 -ml-2 text-slate-500" 
+                onClick={handleBackToList}
+            >
+                <ArrowLeft size={20} />
+            </Button>
+
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-base md:text-lg text-slate-800 truncate">
+                    {activeRequest ? (activeRequest.data.MAKTX || '품명 미입력') : '신규 요청'}
+                </h2>
+                <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded select-none border transition-colors cursor-default bg-slate-100 text-slate-600 border-slate-200">
+                    {currentUser?.isAdmin ? '👑 관리자' : '👤 사용자'}
+                </span>
+              </div>
+              {activeRequest && ( 
+                  <span className="text-[10px] md:text-xs text-slate-400 font-mono truncate">
+                    {activeRequest.id} | <span className={activeRequest.status === 'Approved' ? 'text-green-600 font-bold' : ''}>{activeRequest.status}</span>
+                  </span> 
+              )}
             </div>
-            {activeRequest && ( <span className="text-xs text-slate-400 font-mono">{activeRequest.id} | <span className={activeRequest.status === 'Approved' ? 'text-green-600 font-bold' : ''}>{activeRequest.status}</span></span> )}
           </div>
 
-          <div className="flex gap-2">
-            {/* 🆕 협조전 버튼 추가 */}
+          <div className="flex gap-1 md:gap-2 shrink-0">
             {activeRequest && (
-              <Button variant="outline" className="h-9 text-xs gap-1 text-slate-700 border-slate-300 hover:bg-slate-50" onClick={openTemplateDialog}>
-                <FileText size={14} className="text-indigo-600"/> 협조전
+              // 📱 채팅 버튼 (2xl 이상에서는 숨김 -> 우측 고정창이 보이므로)
+              <Button variant="outline" className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4 2xl:hidden" onClick={() => setIsChatOpen(true)}>
+                <MessageSquare size={14} className="text-indigo-600"/>
+                <span className="hidden md:inline">채팅</span>
               </Button>
             )}
 
             {activeRequest && (
-              <Button variant="outline" className="h-9 text-xs gap-1 text-slate-600" onClick={() => setIsHistoryOpen(true)}>
-                <History size={14} /> 이력
+              <Button variant="outline" className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4 text-slate-700 border-slate-300 hover:bg-slate-50 hidden sm:flex" onClick={openTemplateDialog}>
+                <FileText size={14} className="text-indigo-600"/>
+                <span className="hidden lg:inline">협조전</span>
+              </Button>
+            )}
+
+            {activeRequest && (
+              <Button variant="outline" className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4 text-slate-600" onClick={() => setIsHistoryOpen(true)}>
+                <History size={14} />
+                <span className="hidden md:inline">이력</span>
               </Button>
             )}
 
             {canDelete && (
-               <Button variant="destructive" className="h-9 text-xs gap-1" onClick={handleDelete}>
-                 <Trash2 size={14} /> 삭제
+               <Button variant="destructive" className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4" onClick={handleDelete}>
+                 <Trash2 size={14} />
+                 <span className="hidden md:inline">삭제</span>
                </Button>
             )}
 
@@ -643,27 +666,18 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
                 <Button 
                   onClick={form.handleSubmit(onSubmit)} 
                   variant="outline" 
-                  className="h-9 text-xs gap-1 transition-all duration-200 min-w-[60px]" 
+                  className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4 min-w-[50px] transition-all duration-200" 
                   disabled={isSubmitting} 
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      <span>처리중...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save size={14} />
-                      <span>저장</span>
-                    </>
-                  )}
+                  {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  <span className="hidden md:inline ml-1">저장</span>
                 </Button>
             )}
 
             {currentUser?.isAdmin && activeRequest && (
                 <>
-                    {activeRequest.status === 'Requested' && ( <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-9 text-xs gap-1 text-white"><PlayCircle size={14} /> 검토 시작</Button> )}
-                    {activeRequest.status === 'Review' && ( <> <Button onClick={handleReject} variant="destructive" className="h-9 text-xs gap-1"><XCircle size={14} /> 반려</Button> <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700 h-9 text-xs gap-1 text-white"><CheckCircle size={14} /> 승인 & 채번</Button> </> )}
+                    {activeRequest.status === 'Requested' && ( <Button onClick={handleStartReview} className="bg-orange-500 hover:bg-orange-600 h-8 md:h-9 text-xs gap-1 text-white"><PlayCircle size={14} /><span className="hidden md:inline">검토</span></Button> )}
+                    {activeRequest.status === 'Review' && ( <> <Button onClick={handleReject} variant="destructive" className="h-8 md:h-9 text-xs gap-1"><XCircle size={14} /><span className="hidden md:inline">반려</span></Button> <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700 h-8 md:h-9 text-xs gap-1 text-white"><CheckCircle size={14} /><span className="hidden md:inline">승인</span></Button> </> )}
                 </>
             )}
           </div>
@@ -672,30 +686,31 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
         <div className="flex-1 overflow-hidden flex flex-col">
           <Form {...form}>
             {!activeRequest && (
-              <div className="bg-blue-50 border-b border-blue-100 px-6 py-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+              <div className="bg-blue-50 border-b border-blue-100 px-4 md:px-6 py-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
                 <Info size={16} className="text-blue-600 shrink-0" />
                 <p className="text-xs text-blue-700 font-medium">
-                  📝 <span className="font-bold">신규 작성 모드</span>입니다. 모든 필수 항목을 입력하고 우측 상단의 <span className="underline">저장 버튼</span>을 눌러주세요.
+                  📝 <span className="font-bold">신규 작성</span>: 필수 항목 입력 후 <span className="underline">저장</span>해주세요.
                 </p>
               </div>
             )}
 
             <Tabs defaultValue="basic" className="flex flex-col h-full overflow-hidden">
-              <div className="bg-white border-b px-4 shrink-0">
-                <TabsList className="h-10 bg-transparent w-full justify-start p-0 gap-4 overflow-x-auto no-scrollbar">
+              <div className="bg-white border-b px-2 md:px-4 shrink-0">
+                <TabsList className="h-10 bg-transparent w-full justify-start p-0 gap-2 md:gap-4 overflow-x-auto no-scrollbar">
                   {FORM_TABS.map((tab) => (
-                    <TabsTrigger key={tab.id} value={tab.id} className="rounded-none border-b-2 border-transparent px-2 py-2 text-sm font-medium text-slate-500 data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600 data-[state=active]:shadow-none hover:text-slate-800">
+                    <TabsTrigger key={tab.id} value={tab.id} className="rounded-none border-b-2 border-transparent px-2 py-2 text-xs md:text-sm font-medium text-slate-500 data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600 data-[state=active]:shadow-none hover:text-slate-800">
                       {tab.label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </div>
               
-              <div className="flex-1 overflow-y-auto bg-slate-50 p-6">
+              <div className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-6">
                 {FORM_TABS.map((tab) => (
                   <TabsContent key={tab.id} value={tab.id} className="mt-0">
-                    <Card className="p-6 border-slate-200 shadow-sm">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
+                    <Card className="p-4 md:p-6 border-slate-200 shadow-sm">
+                      {/* 🛠️ Grid 수정: 기본 1열, 2xl(1536px) 이상에서만 2열 */}
+                      <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
                         {MDM_FORM_SCHEMA.filter(f => f.tab === tab.id).map((field) => (
                           <div key={field.key} className={field.type === 'custom_prdha' ? 'col-span-full' : ''}>
                             <FormField control={form.control} name={field.key as string}
@@ -719,37 +734,12 @@ ${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\
         </div>
       </div>
 
-      <div className="w-[320px] border-l border-slate-200 bg-white flex flex-col shrink-0">
+      {/* 🖥️ 우측 고정 채팅 (2xl 이상 대형 화면에서만 보임) */}
+      <div className="hidden 2xl:flex w-[320px] border-l border-slate-200 bg-white flex-col shrink-0">
         <div className="h-16 border-b flex items-center px-4 shrink-0 bg-slate-50/50">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm"><MessageSquare size={16}/> 메시지 히스토리</h3>
         </div>
-        <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
-          <div className="space-y-4">
-            {isCommentsLoading ? (
-                <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div>
-            ) : !activeRequest ? ( 
-                <div className="text-center text-slate-400 text-xs mt-10">요청을 선택하세요.</div> 
-            ) : (activeRequest.comments || []).length === 0 ? ( 
-                <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div> 
-            ) : (
-              (activeRequest.comments || []).map((cmt, idx) => (
-                <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-400"><span className="font-bold text-slate-600">{cmt.writer}</span><span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
-                  <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
-                    {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}{cmt.message}
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        </div>
-        <div className="p-3 border-t bg-white">
-          <div className="flex gap-2">
-            <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="메시지 입력..." className="text-xs h-9 bg-slate-50" onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} disabled={!activeRequest} />
-            <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest}><Send size={14} /></Button>
-          </div>
-        </div>
+        <ChatComponent />
       </div>
     </div>
   )
