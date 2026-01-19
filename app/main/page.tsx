@@ -14,6 +14,7 @@ export default function MainPage() {
   const { isLoggedIn, currentUser, logout, setRequests, currentRequest } = useMDMStore()
   const [isRefreshing, setIsRefreshing] = useState(false)
 
+  // 데이터 로드
   const loadData = useCallback(async (showLoading = false) => {
     if (showLoading) setIsRefreshing(true);
     try {
@@ -28,6 +29,7 @@ export default function MainPage() {
     }
   }, [setRequests]);
 
+  // 초기 진입 체크
   useEffect(() => {
     if (!isLoggedIn) {
       router.push('/login')
@@ -47,7 +49,7 @@ export default function MainPage() {
 
   if (!isLoggedIn) return null
 
-  // 📱 모바일 상태: 상세 요청이 선택되었으면 폼을 보여줍니다.
+  // 📱 모바일 상태 확인 (선택된 요청이 있으면 폼 화면, 없으면 목록 화면)
   const showMobileForm = !!currentRequest;
 
   return (
@@ -94,13 +96,12 @@ export default function MainPage() {
         </div>
       </div>
 
-      {/* 🟢 메인 레이아웃 (Standard Flexbox) */}
+      {/* 🟢 메인 레이아웃 (Standard Flexbox 구조로 겹침 방지) */}
       <div className="flex-1 flex overflow-hidden w-full relative">
         
         {/* 1. 목록 영역 (Left Pane)
-           - flex: Flexbox 컨테이너 안에서 공간 차지
-           - shrink-0: 공간 부족해도 줄어들지 않음
-           - w-[320px]~[360px]: PC에서의 적절한 너비
+           - 모바일: showMobileForm이 true면 숨김
+           - PC(md 이상): 항상 보임 (너비 320~360px 고정)
         */}
         <div className={`
             h-full shadow-xl z-10 bg-white border-r border-slate-200 flex-col shrink-0
@@ -111,8 +112,9 @@ export default function MainPage() {
         </div>
 
         {/* 2. 상세 폼 영역 (Center Pane) 
-           - min-w-0: Flex 자식 요소가 부모 밖으로 넘치지 않게 방지 (중요!)
-           - flex-1: 남은 공간 모두 차지
+           - 모바일: showMobileForm이 true면 보임
+           - PC(md 이상): 항상 보임 (남은 공간 flex-1 채움)
+           - min-w-0: 내용이 많아도 레이아웃을 깨지 않도록 방지
         */}
         <div className={`
             h-full bg-slate-50 relative overflow-hidden flex-col min-w-0

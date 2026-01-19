@@ -112,7 +112,7 @@ export function RequestTable() {
                       <span className="text-[10px] text-slate-400 truncate max-w-[80px]">| {req.requesterName}</span>
                     </div>
                     
-                    {/* 🚀 수정된 부분: truncate 제거, 줄바꿈 허용 */}
+                    {/* ✅ 수정됨: break-keep으로 단어 단위 줄바꿈 허용 */}
                     <p className={`text-sm font-bold leading-snug break-keep whitespace-normal ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>
                       {req.data.MAKTX || '(품명 미입력)'}
                     </p>

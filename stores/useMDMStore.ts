@@ -44,7 +44,6 @@ interface MDMState {
   setLoginUser: (user: UserInfo) => void;
   logout: () => void;
   
-  // DB 데이터 동기화용 액션
   setRequests: (requests: MaterialRequest[]) => void;
   setComments: (requestId: string, comments: any[]) => void;
   setColumnDefs: (defs: Record<string, ColumnDef>) => void;
@@ -74,9 +73,7 @@ export const useMDMStore = create<MDMState>()(
       setLoginUser: (user) => set({ isLoggedIn: true, currentUser: user }),
       logout: () => set({ isLoggedIn: false, currentUser: null, requests: [], currentRequest: null }),
 
-      // 🔴 수정된 부분: 목록을 갱신하더라도 기존 댓글은 유지(Merge)하도록 로직 변경
       setRequests: (newRequests) => set((state) => {
-        // 1. 기존 스토어에 있는 요청들의 '댓글(comments)' 정보를 ID별로 백업합니다.
         const commentMap = new Map<string, any[]>();
         state.requests.forEach(req => {
           if (req.comments && req.comments.length > 0) {
@@ -84,10 +81,8 @@ export const useMDMStore = create<MDMState>()(
           }
         });
 
-        // 2. 새로 받아온 요청 목록에 백업해둔 댓글 정보를 병합합니다.
         const mergedRequests = newRequests.map(req => ({
           ...req,
-          // 중요: 새로운 데이터에 댓글이 없으면(보통 빔), 기존 댓글을 넣어줍니다.
           comments: commentMap.get(req.id) || [] 
         }));
 
@@ -96,7 +91,6 @@ export const useMDMStore = create<MDMState>()(
 
       setComments: (requestId, comments) => set((state) => ({
         requests: state.requests.map(req => req.id === requestId ? { ...req, comments } : req),
-        // 선택된 요청 정보(currentRequest)도 같이 업데이트해줍니다.
         currentRequest: state.currentRequest?.id === requestId ? { ...state.currentRequest, comments } : state.currentRequest
       })),
       setColumnDefs: (defs) => set({ columnDefs: defs }),
@@ -144,7 +138,20 @@ export const useMDMStore = create<MDMState>()(
       })),
 
       setCurrentRequest: (request) => set({ currentRequest: request }),
-      createNewRequest: () => set({ currentRequest: null }),
+
+      // 🚀 핵심 수정: null이 아닌 '가상 신규 객체'를 생성하여 반환
+      // 이렇게 해야 모바일에서 currentRequest가 존재한다고 판단하여 화면을 전환함
+      createNewRequest: () => set((state) => ({ 
+        currentRequest: {
+            id: 'new', // 식별자
+            status: 'Requested',
+            requesterName: state.currentUser?.name || '',
+            createdAt: new Date().toISOString(),
+            data: {},
+            comments: []
+        } 
+      })),
+
       toggleSelection: (id) => set((state) => ({
         selectedIds: state.selectedIds.includes(id) ? state.selectedIds.filter(sid => sid !== id) : [...state.selectedIds, id]
       })),
