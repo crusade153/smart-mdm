@@ -327,11 +327,18 @@ export function MDMForm() {
     );
   };
 
-  // 13. 입력 필드 렌더러
+  // 13. 입력 필드 렌더러 (FIXED: werks || '' 추가)
   const renderFieldInput = (field: FieldMeta, fieldProps: any) => {
     let isReadOnly = field.fixed || !canEdit;
     if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
-    if ((field.key === 'LGPRO' && ['1021','1022','1023'].includes(werks)) || (field.key === 'LGFSB' && ['1022','1023'].includes(werks))) isReadOnly = true;
+    
+    // ✅ 여기 수정됨: includes(werks || '')로 안전하게 처리
+    if (
+      (field.key === 'LGPRO' && ['1021','1022','1023'].includes(werks || '')) || 
+      (field.key === 'LGFSB' && ['1022','1023'].includes(werks || ''))
+    ) {
+      isReadOnly = true;
+    }
 
     let fieldStyle = "h-9 text-sm w-full ";
     if (isReadOnly || field.fixed) fieldStyle += "bg-slate-100 text-slate-400 cursor-not-allowed";
