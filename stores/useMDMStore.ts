@@ -139,11 +139,9 @@ export const useMDMStore = create<MDMState>()(
 
       setCurrentRequest: (request) => set({ currentRequest: request }),
 
-      // 🚀 핵심 수정: null이 아닌 '가상 신규 객체'를 생성하여 반환
-      // 이렇게 해야 모바일에서 currentRequest가 존재한다고 판단하여 화면을 전환함
       createNewRequest: () => set((state) => ({ 
         currentRequest: {
-            id: 'new', // 식별자
+            id: 'new', 
             status: 'Requested',
             requesterName: state.currentUser?.name || '',
             createdAt: new Date().toISOString(),
@@ -164,8 +162,10 @@ export const useMDMStore = create<MDMState>()(
           alert("다운로드할 항목을 선택해주세요.");
           return;
         }
+
+        // 1. 메인 CSV 데이터 생성
         const headerRow3 = SAP_EXPORT_ORDER.join(',');
-        const rows = targets.map(req => {
+        const mainRows = targets.map(req => {
           return SAP_EXPORT_ORDER.map(col => {
             if (col === 'CLASS') return '"ZMM001"';
             const mnameMatch = col.match(/^MNAME_(\d+)$/);
@@ -178,7 +178,28 @@ export const useMDMStore = create<MDMState>()(
             return `"${String(val).replace(/"/g, '""')}"`;
           }).join(',');
         });
-        const csvContent = [CSV_HEADER_ROW_1, CSV_HEADER_ROW_2, headerRow3, ...rows].join('\n');
+
+        // 2. 추가데이터(시트2) 데이터 생성 (✅ EXTRA_ 필드 사용)
+        const extraHeader = "\n\n\n추가데이터\n자재코드,환산단위,환산분자,환산분모,병렬단위Type";
+        
+        const extraRows = targets.map(req => {
+          // ✅ 핵심 로직: 자재코드(MATNR)는 기본 정보에서 자동 매핑
+          const matnr = req.data.MATNR || '';
+          
+          // 나머지는 새로 만든 '추가데이터' 탭의 값 사용 (EXTRA_ 접두어)
+          const extraMeinh = req.data.EXTRA_MEINH || '';
+          const extraUmrez = req.data.EXTRA_UMREZ || '';
+          const extraUmren = req.data.EXTRA_UMREN || '';
+          const extraEwmcw = req.data.EXTRA_EWMCW || '';
+          
+          // 해당 행에 추가데이터가 하나라도 있을 때만 출력할 수도 있지만,
+          // 요청하신 대로 MATNR 매핑을 위해 모든 행 출력
+          return `"${matnr}","${extraMeinh}","${extraUmrez}","${extraUmren}","${extraEwmcw}"`;
+        }).join('\n');
+
+        // 3. 최종 병합 (CSV는 시트 개념이 없으므로 아래에 붙여서 출력)
+        const csvContent = [CSV_HEADER_ROW_1, CSV_HEADER_ROW_2, headerRow3, ...mainRows, extraHeader, extraRows].join('\n');
+        
         const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
