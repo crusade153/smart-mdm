@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useMDMStore } from "@/stores/useMDMStore"
 import { MDMForm } from "@/components/mdm/MDMForm"
 import { RequestTable } from "@/components/mdm/RequestTable"
-import { LogOut, User, RefreshCw, Loader2 } from "lucide-react" 
+import { LogOut, User, RefreshCw, Loader2, BookOpen } from "lucide-react" 
 import { Button } from "@/components/ui/button"
 import { getRequestsAction } from "@/actions/mdm" 
 
@@ -47,6 +47,10 @@ export default function MainPage() {
     await loadData(true);
   }
 
+  const openManual = () => {
+    window.open('/manual', '_blank');
+  }
+
   if (!isLoggedIn) return null
 
   // 📱 모바일 상태 확인 (선택된 요청이 있으면 폼 화면, 없으면 목록 화면)
@@ -65,6 +69,16 @@ export default function MainPage() {
         </div>
         
         <div className="flex items-center gap-2 md:gap-4">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-slate-300 hover:text-white hover:bg-slate-800 gap-2"
+            onClick={openManual}
+          >
+            <BookOpen size={16} />
+            <span className="hidden md:inline text-xs font-medium">사용설명서</span>
+          </Button>
+
           <Button 
             variant="ghost" 
             size="sm" 

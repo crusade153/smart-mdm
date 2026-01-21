@@ -2,9 +2,13 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, CheckCircle2, Database, LayoutTemplate, Share2 } from "lucide-react"
+import { ArrowRight, CheckCircle2, Database, LayoutTemplate, Share2, BookOpen } from "lucide-react"
 
 export default function LandingPage() {
+  const openManual = () => {
+    window.open('/manual', '_blank');
+  }
+
   return (
     <div className="h-screen w-full bg-white flex flex-col selection:bg-indigo-100 font-sans relative overflow-hidden">
       
@@ -22,7 +26,17 @@ export default function LandingPage() {
           </div>
           <span className="font-bold text-xl tracking-tight text-slate-900">Smart MDM</span>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 font-medium px-3 gap-2 hidden md:flex"
+            onClick={openManual}
+          >
+            <BookOpen size={16} />
+            사용설명서
+          </Button>
+
            <Link href="/login">
             <Button variant="ghost" className="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 font-medium px-5">
               로그인
