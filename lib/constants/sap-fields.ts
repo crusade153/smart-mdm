@@ -30,7 +30,7 @@ export const FORM_TABS = [
   { id: 'finance', label: '회계' },
   { id: 'cost', label: '원가' },
   { id: 'class', label: '분류' },
-  { id: 'extra', label: '추가데이터' }, // ✅ 신규 탭 (완전 분리)
+  { id: 'extra', label: '환산단위 입력' }, // ✅ 명칭 변경: 추가데이터 -> 환산단위 입력
 ];
 
 export const MDM_FORM_SCHEMA: FieldMeta[] = [
@@ -58,7 +58,7 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'FERTH', label: '생산/검사메모', tab: 'basic', type: 'text', fixed: true },
   { key: 'WRKST', label: '기본자재', tab: 'basic', type: 'text', fixed: true },
 
-  // [Tab 2] 추가정보 (🚨 기존 필드 복원 - 수정불가/필수 등 기존 로직 유지)
+  // [Tab 2] 추가정보 (기존 필드 유지)
   { key: 'MEINH', label: '환산단위', tab: 'add', type: 'text', required: true, defaultValue: 'BOX' },
   { key: 'UMREZ', label: '환산분자', tab: 'add', type: 'number', required: true },
   { key: 'UMREN', label: '환산분모', tab: 'add', type: 'number', required: true, defaultValue: 1, fixed: true },
@@ -66,12 +66,40 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'EAN11', label: '국제 상품 번호(EAN/UPC)', tab: 'add', type: 'text', required: true },
   { key: 'EWMCW', label: '병렬단위Type', tab: 'add', type: 'text', fixed: true },
 
-  // [Tab 12] 추가데이터 (✅ 신규 탭 - 자유 입력 가능, 흰색 배경)
-  // 자재코드는 입력받지 않고(화면에 표시 X), CSV 다운로드 시에만 자동 매핑합니다.
-  { key: 'EXTRA_MEINH', label: '환산단위', tab: 'extra', type: 'text', placeholder: '예: BOX, PAL' },
-  { key: 'EXTRA_UMREZ', label: '환산분자', tab: 'extra', type: 'number', placeholder: '예: 20' },
-  { key: 'EXTRA_UMREN', label: '환산분모', tab: 'extra', type: 'number', placeholder: '예: 1' },
-  { key: 'EXTRA_EWMCW', label: '병렬단위Type', tab: 'extra', type: 'text', placeholder: '필요시 입력' },
+  // [Tab 12] 환산단위 입력 (✅ 요청 사항 반영)
+  { 
+    key: 'EXTRA_MEINH', 
+    label: '환산단위', 
+    tab: 'extra', 
+    type: 'select', 
+    required: true, // 필수값 (노란색 배경)
+    options: { 'EA': 'EA', 'BOX': 'BOX', 'SIK': 'SIK', 'TOT': 'TOT' }, // 선택형 옵션
+    placeholder: '단위 선택' 
+  },
+  { 
+    key: 'EXTRA_UMREZ', 
+    label: '환산분자', 
+    tab: 'extra', 
+    type: 'number', 
+    required: true, // 필수값 (노란색 배경)
+    placeholder: '수량 입력' 
+  },
+  { 
+    key: 'EXTRA_UMREN', 
+    label: '환산분모', 
+    tab: 'extra', 
+    type: 'number', 
+    defaultValue: 1, 
+    fixed: true // 1로 고정, 수정 불가 (회색 배경)
+  },
+  { 
+    key: 'EXTRA_EWMCW', 
+    label: '병렬단위TYPE', 
+    tab: 'extra', 
+    type: 'text', 
+    fixed: true, // 미필수, 수정 불가 (회색 배경)
+    placeholder: '입력 불가'
+  },
 
   // [Tab 3] 영업
   { key: 'VRKME', label: '판매단위', tab: 'sales', type: 'text', required: true, defaultValue: 'EA' },
