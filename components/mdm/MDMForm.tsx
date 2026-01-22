@@ -48,7 +48,6 @@ import {
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
 
-// 💬 14. 채팅 컴포넌트 (외부로 분리하여 재렌더링 시 포커스 유지)
 const ChatComponent = ({ 
   activeRequest, 
   currentUser, 
@@ -93,7 +92,7 @@ const ChatComponent = ({
 export function MDMForm() {
   const { 
     currentRequest, requests, setCurrentRequest, setRequests, createNewRequest,
-    setComments, currentUser,
+    setComments, currentUser, selectedIds, // ⚡ selectedIds 추가
     columnDefs, setColumnDefs,
     addRequest, updateRequest 
   } = useMDMStore()
@@ -111,14 +110,12 @@ export function MDMForm() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // 1. 컬럼 설명서 로드
   useEffect(() => {
     if (Object.keys(columnDefs).length === 0) {
       getColumnDefinitionsAction().then(data => setColumnDefs(data));
     }
   }, [columnDefs, setColumnDefs]);
 
-  // 권한 체크
   const isOwner = activeRequest?.requesterName === currentUser?.name;
   const isAdmin = currentUser?.isAdmin;
   const isRequestedStatus = activeRequest?.status === 'Requested';
@@ -142,14 +139,12 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
-  // 2. 채팅 스크롤 자동 이동
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeRequest?.comments, isChatOpen]);
 
-  // 3. 데이터 동기화
   const refreshData = async (targetId?: string) => {
     const latestRequests = await getRequestsAction();
     setRequests(latestRequests);
@@ -164,17 +159,16 @@ export function MDMForm() {
     }
   };
 
-  // 4. 자동 완성 로직
   const mtart = form.watch("MTART");
   const werks = form.watch("WERKS"); 
 
   useEffect(() => {
     if (mtart === 'FERT' || mtart === 'ZSET') {
       form.setValue('BESKZ', 'E'); form.setValue('BKLAS', '7920'); form.setValue('MLAST', 3);
-      form.setValue('KTGRM', '10'); // 계정지정그룹 10
+      form.setValue('KTGRM', '10');
     } else if (mtart === 'HAWA') {
       form.setValue('BESKZ', 'F'); form.setValue('BKLAS', '3100'); form.setValue('MLAST', 2);
-      form.setValue('KTGRM', '20'); // 계정지정그룹 20
+      form.setValue('KTGRM', '20');
     }
   }, [mtart, form]);
 
@@ -183,7 +177,6 @@ export function MDMForm() {
     if (werks === '1022') { form.setValue('LGFSB', '2210'); } else if (werks === '1023') { form.setValue('LGFSB', '2301'); }
   }, [werks, form]);
 
-  // 5. 폼 데이터 초기화
   useEffect(() => {
     if (activeRequest && !isNewMode) {
       form.reset({ ...generateDefaultValues(), ...activeRequest.data });
@@ -273,24 +266,20 @@ export function MDMForm() {
     await refreshData(reqId);
   }
 
-  // 🔥 [복구] handleSendComment 함수 (여기 위치해야 함)
   const handleSendComment = async () => {
     if (!commentInput.trim() || !activeRequest || isNewMode || !currentUser) return;
     const msg = commentInput;
     const reqId = activeRequest.id;
     
-    // UI 즉시 업데이트 (Optimistic Update)
     setCommentInput("");
     const tempComments = [
       ...(activeRequest.comments || []), 
       { writer: currentUser.name, message: msg, createdAt: new Date().toISOString() }
     ];
-    setComments(reqId, tempComments); // 로컬 스토어 즉시 반영
+    setComments(reqId, tempComments); 
 
-    // 서버 전송
     await createCommentAction(reqId, msg, currentUser.name);
     
-    // 최신 데이터 재조회 (확실한 동기화)
     const realComments = await getCommentsAction(reqId);
     setComments(reqId, realComments);
   }
@@ -338,12 +327,59 @@ export function MDMForm() {
     await refreshData(activeRequest.id);
   }
 
+  // ⚡ 협조전 다중 선택 기능 반영
   const openTemplateDialog = () => {
-    if (!activeRequest) return;
-    const hierarchyRequest = activeRequest.comments?.filter(c => c.message.includes('[계층구조 신규 요청]')).map(c => c.message.replace('📂 [계층구조 신규 요청]', '').trim()).join('\n   - ') || '';
-    const text = `[업무협조의뢰] 신규 자재 코드 생성 요청 [${activeRequest.data.MAKTX || '품명'}]\n\n1. 자재 정보\n   - 자재명: ${activeRequest.data.MAKTX || '-'}\n   - 자재유형: ${activeRequest.data.MTART || '-'}\n   - 기본단위: ${activeRequest.data.MEINS || '-'}\n   - 자재그룹: ${activeRequest.data.MATKL || '-'}\n   - 중량: ${activeRequest.data.NTGEW || '0'} ${activeRequest.data.GEWEI || ''}\n\n2. 관리 정보\n   - 플랜트: ${activeRequest.data.WERKS || '-'}\n   - 저장위치: ${activeRequest.data.LGPRO || '-'}\n   - MRP 관리자: ${activeRequest.data.DISPO || '-'}\n\n${hierarchyRequest ? `3. 요청 사항 (계층구조)\n   - ${hierarchyRequest}\n` : ''}위 품목에 대해 기준정보 생성 요청드립니다.\n- 요청일: ${activeRequest.createdAt.split('T')[0]}\n- 요청자: ${activeRequest.requesterName}`.trim();
-    setTemplateText(text); setIsTemplateOpen(true);
+    let targets = requests.filter(r => selectedIds.includes(r.id));
+    
+    if (targets.length === 0 && activeRequest && !isNewMode) {
+        targets = [activeRequest];
+    }
+
+    if (targets.length === 0) {
+        alert("협조전을 작성할 요청을 목록에서 선택해주세요.");
+        return;
+    }
+
+    const firstItemName = targets[0].data.MAKTX || '품명 미입력';
+    const countSuffix = targets.length > 1 ? ` 외 ${targets.length - 1}건` : '';
+    const title = `[업무협조의뢰] 신규 자재 코드 생성 요청 [${firstItemName}${countSuffix}]`;
+
+    const bodyContent = targets.map((req, index) => {
+        const hierarchyRequest = req.comments?.filter((c: any) => c.message.includes('[계층구조 신규 요청]'))
+            .map((c: any) => c.message.replace('📂 [계층구조 신규 요청]', '').trim()).join('\n      - ') || '특이사항 없음';
+
+        return `
+■ No.${index + 1} : ${req.data.MAKTX || '(품명 없음)'} (${req.id})
+
+1. 자재 정보
+   - 자재유형: ${req.data.MTART || '-'}
+   - 기본단위: ${req.data.MEINS || '-'}
+   - 자재그룹: ${req.data.MATKL || '-'}
+   - 중량: ${req.data.NTGEW || '0'} ${req.data.GEWEI || ''}
+
+2. 관리 정보
+   - 플랜트: ${req.data.WERKS || '-'}
+   - 저장위치: ${req.data.LGPRO || '-'}
+   - MRP 관리자: ${req.data.DISPO || '-'}
+
+3. 요청 사항 (계층구조)
+   - ${hierarchyRequest}
+        `.trim();
+    }).join('\n\n--------------------------------------------------\n\n');
+
+    const footer = `
+위 품목에 대해 기준정보 생성 요청드립니다.
+
+- 요청일: ${new Date().toLocaleDateString()}
+- 요청자: ${currentUser?.name || 'Unknown'}
+    `.trim();
+
+    const fullText = `${title}\n\n${bodyContent}\n\n${footer}`;
+    
+    setTemplateText(fullText); 
+    setIsTemplateOpen(true);
   }
+
   const copyToClipboard = () => { navigator.clipboard.writeText(templateText); alert("복사되었습니다."); setIsTemplateOpen(false); }
 
   const renderLabelWithHelp = (field: FieldMeta) => {
@@ -363,7 +399,6 @@ export function MDMForm() {
               <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex items-center gap-2"><BookOpen size={16} className="text-indigo-600"/><h4 className="font-bold text-indigo-900 text-sm">{field.label}</h4></div>
               <div className="p-4 space-y-3 bg-white text-xs">
                 <p className="text-slate-600 font-medium">{def.definition}</p>
-                {/* 🚨 Risk Factor 표시 복구 */}
                 {def.risk && (
                   <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded text-red-700">
                     <span className="font-bold block mb-1">⚠️ 미입력/오류 리스크</span>
@@ -398,7 +433,6 @@ export function MDMForm() {
     if (field.key === 'LGFSB' && werks === '1021') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent><SelectItem value="2101">2101 냉동</SelectItem><SelectItem value="2102">2102 냉장</SelectItem><SelectItem value="2103">2103 상온</SelectItem></SelectContent></Select>;
     if (field.type === 'custom_prdha') return <FormControl><div className={isReadOnly ? "pointer-events-none opacity-60" : "w-full"}><HierarchySelector value={fieldProps.value} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /></div></FormControl>;
     
-    // 🚨 Select 빈 값 처리
     if (field.type === 'select' && field.options) {
       return (
         <Select 
@@ -446,7 +480,6 @@ export function MDMForm() {
         <DialogContent className="max-w-xl bg-white"><DialogHeader><DialogTitle className="flex items-center gap-2"><FileText size={20} className="text-indigo-600"/> 업무협조의뢰 양식</DialogTitle><DialogDescription>협조의뢰 본문에 붙여넣으세요.</DialogDescription></DialogHeader><div className="py-2"><Textarea value={templateText} readOnly className="h-[400px] text-sm font-mono bg-slate-50 leading-relaxed resize-none"/></div><DialogFooter><Button onClick={copyToClipboard} className="bg-indigo-600 w-full sm:w-auto gap-2"><Copy size={16}/> 복사</Button></DialogFooter></DialogContent>
       </Dialog>
 
-      {/* 모바일/태블릿용 채팅 슬라이드 (Sheet) */}
       <Sheet open={isChatOpen} onOpenChange={setIsChatOpen}>
         <SheetContent className="w-[340px] sm:w-[400px] p-0 flex flex-col bg-white" side="right">
           <SheetHeader className="p-4 border-b shrink-0"><SheetTitle className="text-sm flex items-center gap-2"><MessageSquare size={16}/> 메시지 히스토리</SheetTitle></SheetHeader>
@@ -561,7 +594,6 @@ export function MDMForm() {
         </div>
       </div>
 
-      {/* PC(2xl 이상)용 우측 고정 채팅 패널 */}
       {activeRequest && !isNewMode && (
         <div className="hidden 2xl:flex w-[320px] border-l border-slate-200 bg-white flex-col shrink-0">
           <div className="h-16 border-b flex items-center px-4 shrink-0 bg-slate-50/50">

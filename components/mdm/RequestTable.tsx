@@ -8,12 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Download, Plus, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 
 const STATUS_CONFIG: Record<string, { char: string; label: string; color: string; bg: string }> = {
   Requested: { char: '요', label: '요청 (Requested)', color: 'text-indigo-600', bg: 'bg-indigo-100' },
@@ -25,7 +19,8 @@ const STATUS_CONFIG: Record<string, { char: string; label: string; color: string
 export function RequestTable() {
   const { 
     requests, currentRequest, setCurrentRequest, createNewRequest,
-    selectedIds, toggleSelection, toggleAllSelection, downloadSelectedCsv 
+    selectedIds, toggleSelection, toggleAllSelection, 
+    downloadSelectedExcel // ⚡ 수정됨: Csv -> Excel 함수 가져오기
   } = useMDMStore()
   
   const [searchTerm, setSearchTerm] = useState("")
@@ -71,7 +66,10 @@ export function RequestTable() {
         {selectedIds.length > 0 && (
           <div className="flex items-center justify-between bg-green-50 p-2 rounded-lg border border-green-200">
             <span className="text-xs font-bold text-green-700 ml-1">{selectedIds.length}건</span>
-            <Button size="sm" variant="outline" className="h-7 text-xs border-green-300 bg-white text-green-700" onClick={downloadSelectedCsv}><Download size={12} /> CSV</Button>
+            {/* ⚡ 수정됨: onClick 이벤트 변경 */}
+            <Button size="sm" variant="outline" className="h-7 text-xs border-green-300 bg-white text-green-700" onClick={downloadSelectedExcel}>
+                <Download size={12} /> 엑셀
+            </Button>
           </div>
         )}
       </div>
@@ -112,7 +110,6 @@ export function RequestTable() {
                       <span className="text-[10px] text-slate-400 truncate max-w-[80px]">| {req.requesterName}</span>
                     </div>
                     
-                    {/* ✅ 수정됨: break-keep으로 단어 단위 줄바꿈 허용 */}
                     <p className={`text-sm font-bold leading-snug break-keep whitespace-normal ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>
                       {req.data.MAKTX || '(품명 미입력)'}
                     </p>
