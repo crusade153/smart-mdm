@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea"
 
 import { MDM_FORM_SCHEMA, FORM_TABS, FieldMeta } from "@/lib/constants/sap-fields"
 import { useMDMStore } from "@/stores/useMDMStore"
-import { SapMasterData } from "@/types/mdm"
+import { SapMasterData, MaterialRequest } from "@/types/mdm"
 import { HierarchySelector } from "./HierarchySelector"
 import { MOCK_MAT_GROUP, MOCK_REF_DATA } from "@/lib/mock-data"
 import { 
@@ -47,7 +47,9 @@ import {
   getColumnDefinitionsAction
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
+import { TemplateSelectDialog } from "./TemplateSelectDialog" // 🆕 새로 만든 컴포넌트 임포트
 
+// 채팅 컴포넌트 (변경 없음)
 const ChatComponent = ({ 
   activeRequest, 
   currentUser, 
@@ -92,7 +94,7 @@ const ChatComponent = ({
 export function MDMForm() {
   const { 
     currentRequest, requests, setCurrentRequest, setRequests, createNewRequest,
-    setComments, currentUser, selectedIds, // ⚡ selectedIds 추가
+    setComments, currentUser, selectedIds,
     columnDefs, setColumnDefs,
     addRequest, updateRequest 
   } = useMDMStore()
@@ -104,9 +106,11 @@ export function MDMForm() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
-  const [isTemplateOpen, setIsTemplateOpen] = useState(false)
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false) // 🆕 협조전 템플릿용이 아니라 기존거
+  const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false) // 🆕 복사하기 팝업용
   const [templateText, setTemplateText] = useState("")
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [sourceRequestId, setSourceRequestId] = useState<string | null>(null); // 🆕 출처 추적용
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -190,12 +194,51 @@ export function MDMForm() {
         }
       };
       loadComments();
-    } else {
+    } else if (isNewMode && !sourceRequestId) { 
+      // sourceRequestId가 없을 때만 초기화 (복사한 데이터 유지를 위해)
       form.reset(generateDefaultValues());
     }
-  }, [activeRequest?.id, isNewMode, form, setComments]); 
+  }, [activeRequest?.id, isNewMode, form, setComments, sourceRequestId]); 
 
-  const handleBackToList = () => { setCurrentRequest(null); }
+  const handleBackToList = () => { setCurrentRequest(null); setSourceRequestId(null); }
+
+  // 🆕 따라하기 (Clone) 핸들러 함수
+  const handleLoadTemplate = (targetRequest: MaterialRequest) => {
+    // 1. 찾아 바꾸기 (선택 사항)
+    const replaceText = prompt(`[${targetRequest.data.MAKTX}] 내용을 복사합니다.\n\n편의를 위해 품명 등에서 특정 단어를 변경하시겠습니까?\n(예: '얼큰한맛' -> '순한맛')\n\n변경할 단어를 입력하세요. (변경 없으면 취소/확인)`);
+    
+    let newData: SapMasterData = { ...targetRequest.data }; 
+    let replaceMsg = "";
+
+    if (replaceText && replaceText.trim() !== "") {
+       const newWord = prompt(`'${replaceText}'을(를) 무엇으로 바꾸시겠습니까?`);
+       if (newWord !== null) {
+          // 모든 문자열 필드에 대해 치환 수행
+          Object.keys(newData).forEach((key) => {
+            const val = newData[key];
+            if (typeof val === 'string') {
+               newData[key] = val.replaceAll(replaceText, newWord);
+            }
+          });
+          replaceMsg = ` ('${replaceText}' → '${newWord}' 치환됨)`;
+       }
+    }
+
+    // 2. 중요 필드 리셋 (자재코드는 신규이므로 반드시 비움)
+    newData.MATNR = ""; 
+    
+    // 3. 폼에 적용
+    form.reset(newData);
+    setSourceRequestId(targetRequest.id); 
+    setIsCopyDialogOpen(false);
+
+    // 4. 강력한 Alert (Positive Flexibility)
+    alert(
+      `✅ [${targetRequest.data.MAKTX}] 자재 정보를 성공적으로 불러왔습니다.${replaceMsg}\n\n` +
+      `⚠️ 주의: 품명, 바코드 등 고유 정보까지 모두 복사되었습니다.\n` +
+      `반드시 현재 요청 품목에 맞게 수정해주세요!`
+    );
+  };
 
   const onSubmit = async (data: SapMasterData) => {
     const missingFields = MDM_FORM_SCHEMA.filter(f => f.required && !data[f.key]).map(f => f.label);
@@ -203,12 +246,28 @@ export function MDMForm() {
 
     if (isNewMode) {
       if (!confirm("요청을 등록하시겠습니까?")) return;
+      
+      // 1. 스토어에 추가
       addRequest(data); 
       alert("저장되었습니다.");
       
+      // 2. DB 저장
       createRequestAction(data, actorName).then(async (result) => {
         if (result.success && result.id) {
           await refreshData(result.id);
+          
+          // 🆕 출처 남기기 (Source Tracking)
+          if (sourceRequestId) {
+             const sourceReq = requests.find(r => r.id === sourceRequestId);
+             const sourceName = sourceReq?.data.MAKTX || sourceRequestId;
+             await createCommentAction(
+               result.id, 
+               `📋 [시스템] 이 요청은 '${sourceName}' (${sourceRequestId}) 자재 정보를 복사(Clone)하여 생성되었습니다.`, 
+               "System"
+             );
+             setSourceRequestId(null); // 초기화
+          }
+
           if (missingFields.length > 0) {
              await createCommentAction(result.id, `⚠️ [시스템 알림] 필수값이 비어있습니다: ${missingFields.join(', ')}`, "System");
           }
@@ -327,7 +386,6 @@ export function MDMForm() {
     await refreshData(activeRequest.id);
   }
 
-  // ⚡ 협조전 다중 선택 기능 반영
   const openTemplateDialog = () => {
     let targets = requests.filter(r => selectedIds.includes(r.id));
     
@@ -476,6 +534,13 @@ export function MDMForm() {
     <div className="flex h-full bg-slate-50/50 w-full overflow-hidden">
       <AuditLogDialog requestId={activeRequest?.id || null} isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
       
+      {/* 🆕 복사하기 다이얼로그 추가 */}
+      <TemplateSelectDialog 
+        isOpen={isCopyDialogOpen} 
+        onClose={() => setIsCopyDialogOpen(false)} 
+        onSelect={handleLoadTemplate} 
+      />
+
       <Dialog open={isTemplateOpen} onOpenChange={setIsTemplateOpen}>
         <DialogContent className="max-w-xl bg-white"><DialogHeader><DialogTitle className="flex items-center gap-2"><FileText size={20} className="text-indigo-600"/> 업무협조의뢰 양식</DialogTitle><DialogDescription>협조의뢰 본문에 붙여넣으세요.</DialogDescription></DialogHeader><div className="py-2"><Textarea value={templateText} readOnly className="h-[400px] text-sm font-mono bg-slate-50 leading-relaxed resize-none"/></div><DialogFooter><Button onClick={copyToClipboard} className="bg-indigo-600 w-full sm:w-auto gap-2"><Copy size={16}/> 복사</Button></DialogFooter></DialogContent>
       </Dialog>
@@ -511,6 +576,19 @@ export function MDMForm() {
           </div>
 
           <div className="flex gap-1 md:gap-2 shrink-0">
+            
+            {/* 🆕 신규 작성 시 '기존자재 불러오기' 버튼 표시 */}
+            {isNewMode && (
+                <Button 
+                    variant="outline" 
+                    className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" 
+                    onClick={() => setIsCopyDialogOpen(true)}
+                >
+                    <Copy size={14} />
+                    <span className="hidden md:inline">기존자재 불러오기</span>
+                </Button>
+            )}
+
             {activeRequest && !isNewMode && (
               <Button variant="outline" className="h-8 md:h-9 text-xs gap-1 px-2 md:px-4 2xl:hidden" onClick={() => setIsChatOpen(true)}>
                 <MessageSquare size={14} className="text-indigo-600"/>
