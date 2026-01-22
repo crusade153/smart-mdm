@@ -5,14 +5,20 @@ import { useRouter } from "next/navigation"
 import { useMDMStore } from "@/stores/useMDMStore"
 import { MDMForm } from "@/components/mdm/MDMForm"
 import { RequestTable } from "@/components/mdm/RequestTable"
-import { LogOut, User, RefreshCw, Loader2, BookOpen } from "lucide-react" 
+// 💡 [추가] MessageCircle 아이콘 추가
+import { LogOut, User, RefreshCw, Loader2, BookOpen, MessageCircle } from "lucide-react" 
 import { Button } from "@/components/ui/button"
 import { getRequestsAction } from "@/actions/mdm" 
+// 💡 [추가] FeedbackDialog 임포트
+import { FeedbackDialog } from "@/components/mdm/FeedbackDialog"
 
 export default function MainPage() {
   const router = useRouter()
   const { isLoggedIn, currentUser, logout, setRequests, currentRequest } = useMDMStore()
   const [isRefreshing, setIsRefreshing] = useState(false)
+  
+  // 💡 [추가] 피드백 팝업 상태 관리
+  const [isFaqOpen, setIsFaqOpen] = useState(false);
 
   // 데이터 로드
   const loadData = useCallback(async (showLoading = false) => {
@@ -59,6 +65,9 @@ export default function MainPage() {
   return (
     <main className="h-screen w-full bg-slate-100 flex flex-col overflow-hidden text-slate-900 font-sans">
       
+      {/* 💡 [추가] 피드백 다이얼로그 렌더링 */}
+      <FeedbackDialog isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
+
       {/* 🟢 헤더 영역 */}
       <div className="h-14 bg-slate-900 text-white flex items-center px-4 shadow-md shrink-0 justify-between z-20">
         <div className="flex items-center gap-3 select-none">
@@ -77,6 +86,17 @@ export default function MainPage() {
           >
             <BookOpen size={16} />
             <span className="hidden md:inline text-xs font-medium">사용설명서</span>
+          </Button>
+
+          {/* 💡 [추가] 고객센터 버튼 추가 */}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-slate-300 hover:text-white hover:bg-slate-800 gap-2"
+            onClick={() => setIsFaqOpen(true)}
+          >
+            <MessageCircle size={16} />
+            <span className="hidden md:inline text-xs font-medium">버그신고/편의개선 요청</span>
           </Button>
 
           <Button 
@@ -113,10 +133,7 @@ export default function MainPage() {
       {/* 🟢 메인 레이아웃 (Standard Flexbox 구조로 겹침 방지) */}
       <div className="flex-1 flex overflow-hidden w-full relative">
         
-        {/* 1. 목록 영역 (Left Pane)
-           - 모바일: showMobileForm이 true면 숨김
-           - PC(md 이상): 항상 보임 (너비 320~360px 고정)
-        */}
+        {/* 1. 목록 영역 (Left Pane) */}
         <div className={`
             h-full shadow-xl z-10 bg-white border-r border-slate-200 flex-col shrink-0
             ${showMobileForm ? 'hidden md:flex' : 'flex w-full'} 
@@ -125,11 +142,7 @@ export default function MainPage() {
           <RequestTable />
         </div>
 
-        {/* 2. 상세 폼 영역 (Center Pane) 
-           - 모바일: showMobileForm이 true면 보임
-           - PC(md 이상): 항상 보임 (남은 공간 flex-1 채움)
-           - min-w-0: 내용이 많아도 레이아웃을 깨지 않도록 방지
-        */}
+        {/* 2. 상세 폼 영역 (Center Pane) */}
         <div className={`
             h-full bg-slate-50 relative overflow-hidden flex-col min-w-0
             ${showMobileForm ? 'flex w-full' : 'hidden md:flex md:flex-1'}
