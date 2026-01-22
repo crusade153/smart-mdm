@@ -278,7 +278,7 @@ export interface ColumnDef {
 }
 
 // 🚨 [복구] 사용자가 제공한 툴팁 데이터 하드코딩 (Risk 포함)
-// ✅ [수정] 환산단위 관련 신규 툴팁 추가
+// ✅ [수정] 환산단위 관련 툴팁 내용 업데이트
 const STATIC_COLUMN_DEFS: Record<string, ColumnDef> = {
   "WERKS": { key: "WERKS", definition: "제품을 생산하거나 보관하고, 유통하는 물리적/논리적 거점 코드", usage: "1021(K1), 1022(K3) 등 공장 지정", risk: "생산/재고가 엉뚱한 공장으로 지정되어 물류 프로세스 마비" },
   "MTART": { key: "MTART", definition: "자재의 성격(원자재, 반제품, 완제품 등)을 구분하는 기준", usage: "FERT(제품), HAWA(상품) 등", risk: "제품 : 하림산업에서 생산, 상품 : 외부에서 구매하여 판매목적" },
@@ -332,9 +332,19 @@ const STATIC_COLUMN_DEFS: Record<string, ColumnDef> = {
   "MWERT_16": { key: "MWERT_16", definition: "한 팔레트에 적재 가능한 최대 박스 수량", usage: "40 (Box/Pallet)", risk: "과적 또는 공간 낭비, 물류비 증가" },
   "MWERT_17": { key: "MWERT_17", definition: "물류 박스 식별용 바코드 (ITF-14 등)", usage: "1880...", risk: "물류 센터 입출고 스캔 불가 및 재고 추적 실패" },
   
-  // ✅ 신규 추가된 항목에 대한 툴팁
-  "EXTRA_MEINH": { key: "EXTRA_MEINH", definition: "본품의 최소단위를 입력하는 란 (예: 라면 번들 1EA → 4SIK, 만두 350gx2 1EA → 2SIK)", usage: "EA, BOX, SIK, TOT 중 선택", risk: "단위 변환 기준이 잘못되면 재고 수량이 틀어집니다." },
-  "EXTRA_UMREZ": { key: "EXTRA_UMREZ", definition: "기본 단위(1 EA)를 구성하는 하위 단위(SIK 등)의 수량", usage: "예: 1번들에 4개가 들어있으면 '4' 입력", risk: "잘못 입력 시 낱개 재고가 뻥튀기되거나 축소됨" },
+  // ✅ [수정] 구성 단위 (구 환산단위) 관련 툴팁 정의 업데이트
+  "EXTRA_MEINH": { 
+      key: "EXTRA_MEINH", 
+      definition: "본품(EA)을 구성하는 하위 단위 (예: 라면 번들 1EA 내의 4SIK, 만두 2봉)", 
+      usage: "BOX, SIK, TOT 중 선택 (EA는 기본단위이므로 선택 불가)", 
+      risk: "구성 단위가 틀리면 재고 수량 집계가 배수로 틀어집니다." 
+  },
+  "EXTRA_UMREZ": { 
+      key: "EXTRA_UMREZ", 
+      definition: "구성 단위 하나에 들어가는 낱개 수량 (Numerator)", 
+      usage: "예: 1박스=20개면 '20', 1번들=4개면 '4'", 
+      risk: "잘못 입력 시 낱개 재고가 뻥튀기되거나 축소됨" 
+  },
   "EXTRA_UMREN": { key: "EXTRA_UMREN", definition: "환산 분모 (기준이 되는 단위의 수량)", usage: "항상 '1'로 고정됩니다.", risk: "변경 불가 항목" },
   "EXTRA_EWMCW": { key: "EXTRA_EWMCW", definition: "병렬 단위 타입 (현재 사용 안 함)", usage: "입력 불가", risk: "-" }
 };

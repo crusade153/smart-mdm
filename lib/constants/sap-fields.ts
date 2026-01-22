@@ -11,7 +11,7 @@ export interface FieldMeta {
   type: FieldType;
   required?: boolean;
   defaultValue?: string | number;
-  fixed?: boolean; // true면 수정 불가(회색/파란색)
+  fixed?: boolean;
   options?: Record<string, string>;
   refKey?: string;
   placeholder?: string;
@@ -20,7 +20,7 @@ export interface FieldMeta {
 
 export const FORM_TABS = [
   { id: 'basic', label: '기본정보' },
-  { id: 'add', label: '추가정보' }, // 기존 탭 유지
+  { id: 'add', label: '추가정보' },
   { id: 'sales', label: '영업' },
   { id: 'purchase', label: '구매' },
   { id: 'mrp', label: 'MRP' },
@@ -30,11 +30,11 @@ export const FORM_TABS = [
   { id: 'finance', label: '회계' },
   { id: 'cost', label: '원가' },
   { id: 'class', label: '분류' },
-  { id: 'extra', label: '환산단위 입력' }, // ✅ 명칭 변경: 추가데이터 -> 환산단위 입력
+  { id: 'extra', label: '환산정보(상세)' }, // 탭 이름도 살짝 구체화
 ];
 
 export const MDM_FORM_SCHEMA: FieldMeta[] = [
-  // [Tab 1] 기본정보
+  // ... (기존 Tab 1 ~ Tab 2 필드 생략, 변경 없음) ...
   { key: 'WERKS', label: '플랜트', tab: 'basic', type: 'select', required: true, options: {'1021':'1021 (K1)', '1022':'1022 (K3)', '1023':'1023 (K2)', '1031':'1031 (FBH)'} },
   { key: 'MTART', label: '자재유형', tab: 'basic', type: 'select', required: true, options: {'FERT':'FERT (완제품)', 'ZSET':'ZSET (세트)', 'HAWA':'HAWA (상품)'} },
   { key: 'MBRSH', label: '산업유형', tab: 'basic', type: 'text', fixed: true },
@@ -58,50 +58,50 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'FERTH', label: '생산/검사메모', tab: 'basic', type: 'text', fixed: true },
   { key: 'WRKST', label: '기본자재', tab: 'basic', type: 'text', fixed: true },
 
-  // [Tab 2] 추가정보 (기존 필드 유지)
-  { key: 'MEINH', label: '환산단위', tab: 'add', type: 'text', required: true, defaultValue: 'BOX' },
+  // [Tab 2] 추가정보
+  { key: 'MEINH', label: '환산단위(물류)', tab: 'add', type: 'text', required: true, defaultValue: 'BOX', fixed: false }, // 여기도 (물류) 등 힌트 추가 가능
   { key: 'UMREZ', label: '환산분자', tab: 'add', type: 'number', required: true },
   { key: 'UMREN', label: '환산분모', tab: 'add', type: 'number', required: true, defaultValue: 1, fixed: true },
   { key: 'NUMTP', label: '국제물품번호(EAN) 범주', tab: 'add', type: 'text', required: true },
   { key: 'EAN11', label: '국제 상품 번호(EAN/UPC)', tab: 'add', type: 'text', required: true },
   { key: 'EWMCW', label: '병렬단위Type', tab: 'add', type: 'text', fixed: true },
 
-  // [Tab 12] 환산단위 입력 (✅ 요청 사항 반영)
+  // [Tab 12] 환산단위 입력 (✅ 명칭 변경 및 옵션 제한)
   { 
     key: 'EXTRA_MEINH', 
-    label: '환산단위', 
+    label: '구성 단위', // 👈 '환산단위'에서 변경하여 오해 방지
     tab: 'extra', 
     type: 'select', 
-    required: true, // 필수값 (노란색 배경)
-    options: { 'EA': 'EA', 'BOX': 'BOX', 'SIK': 'SIK', 'TOT': 'TOT' }, // 선택형 옵션
-    placeholder: '단위 선택' 
+    required: true, 
+    options: { 'BOX': 'BOX', 'SIK': 'SIK', 'TOT': 'TOT' }, // 👈 EA 제거됨
+    placeholder: '단위 선택 (BOX/SIK/TOT)' 
   },
   { 
     key: 'EXTRA_UMREZ', 
-    label: '환산분자', 
+    label: '구성 수량', // 👈 '환산분자'보다 직관적으로 변경 (1 구성단위에 몇 개?)
     tab: 'extra', 
     type: 'number', 
-    required: true, // 필수값 (노란색 배경)
-    placeholder: '수량 입력' 
+    required: true, 
+    placeholder: '예: 1박스에 20개면 20 입력' 
   },
   { 
     key: 'EXTRA_UMREN', 
-    label: '환산분모', 
+    label: '기준 분모', 
     tab: 'extra', 
     type: 'number', 
     defaultValue: 1, 
-    fixed: true // 1로 고정, 수정 불가 (회색 배경)
+    fixed: true 
   },
   { 
     key: 'EXTRA_EWMCW', 
     label: '병렬단위TYPE', 
     tab: 'extra', 
     type: 'text', 
-    fixed: true, // 미필수, 수정 불가 (회색 배경)
+    fixed: true, 
     placeholder: '입력 불가'
   },
 
-  // [Tab 3] 영업
+  // ... (나머지 Tab 3 ~ 11 필드들 그대로 유지) ...
   { key: 'VRKME', label: '판매단위', tab: 'sales', type: 'text', required: true, defaultValue: 'EA' },
   { key: 'ALAND', label: '세금국가', tab: 'sales', type: 'text', defaultValue: 'KR', fixed: true },
   { key: 'TATYP', label: '세금범주', tab: 'sales', type: 'text', defaultValue: 'MWST', fixed: true },
@@ -146,8 +146,6 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'MTVFP', label: '가용성점검', tab: 'sales', type: 'text', defaultValue: '02', fixed: true },
   { key: 'LADGR', label: '적하그룹', tab: 'sales', type: 'text', defaultValue: '0001', fixed: true },
   { key: 'TRAGR', label: '운송그룹', tab: 'sales', type: 'text', defaultValue: '0001', fixed: true },
-
-  // [Tab 4] 구매
   { key: 'BSTME', label: '구매단위', tab: 'purchase', type: 'text', fixed: true },
   { key: 'EKGRP', label: '구매그룹', tab: 'purchase', type: 'text', fixed: true },
   { key: 'VABME', label: '가변단위', tab: 'purchase', type: 'text', fixed: true },
@@ -156,8 +154,6 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'MMSTA', label: '플랜트 고유 자재상태', tab: 'purchase', type: 'text', fixed: true },
   { key: 'MMSTD', label: '효력 시작일', tab: 'purchase', type: 'date', fixed: true },
   { key: 'XCHPF', label: '배치관리', tab: 'purchase', type: 'text', defaultValue: 'X', fixed: true },
-
-  // [Tab 5] MRP
   { key: 'DISMM', label: 'MRP 유형', tab: 'mrp', type: 'text', defaultValue: 'X0', fixed: true },
   { key: 'DISLS', label: '로트크기', tab: 'mrp', type: 'text', defaultValue: 'EX', fixed: true },
   { key: 'MAABC', label: 'ABC지시자', tab: 'mrp', type: 'text', fixed: true },
@@ -187,8 +183,6 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'AHDIS', label: '종속소요량', tab: 'mrp', type: 'text', fixed: true },
   { key: 'SAUFT', label: '반복제조지시자', tab: 'mrp', type: 'text', fixed: true },
   { key: 'RGEKZ', label: '백플러시', tab: 'mrp', type: 'text', fixed: true },
-
-  // [Tab 6] 일정
   { key: 'FRTME', label: '생산단위', tab: 'schedule', type: 'text', fixed: true },
   { key: 'AUSME', label: '출고단위', tab: 'schedule', type: 'text', fixed: true },
   { key: 'SFCPF', label: '생산일정계획프로파일', tab: 'schedule', type: 'text', defaultValue: 'HR0001', fixed: true },
@@ -196,11 +190,7 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'UEETK', label: '무제한초과납품 지시자', tab: 'schedule', type: 'text', defaultValue: 'X', fixed: true },
   { key: 'UNETO', label: '미달허용(%)', tab: 'schedule', type: 'number', fixed: true },
   { key: 'UEETO', label: '초과허용(%)', tab: 'schedule', type: 'number', fixed: true },
-
-  // [Tab 7] 품질
   { key: 'ZQUAL', label: '검사대상', tab: 'quality', type: 'text', fixed: true },
-
-  // [Tab 8] 저장
   { key: 'TEMPB', label: '온도조건', tab: 'storage', type: 'ref_select', required: true, refKey: 'temp' },
   { key: 'RAUBE', label: '저장조건', tab: 'storage', type: 'ref_select', required: true, refKey: 'storage' },
   { key: 'MHDRZ', label: '최소 잔존 셸프 라이프', tab: 'storage', type: 'number', required: true },
@@ -208,8 +198,6 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'IPRKZ', label: 'SLED 기간 지시자', tab: 'storage', type: 'number', fixed: true },
   { key: 'DISKZ', label: '저장위치MRP지시자', tab: 'storage', type: 'text', fixed: true },
   { key: 'XMCNG', label: '마이너스허용', tab: 'storage', type: 'text', fixed: true },
-
-  // [Tab 9] 회계
   { key: 'BKLAS', label: '평가클래스', tab: 'finance', type: 'text', defaultValue: '7920', fixed: true },
   { key: 'BWTTY', label: '평가범주', tab: 'finance', type: 'text', fixed: true },
   { key: 'MLMAA', label: 'ML Act.', tab: 'finance', type: 'text', fixed: true },
@@ -218,8 +206,6 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'STPRS', label: '표준가격', tab: 'finance', type: 'number', fixed: true },
   { key: 'VERPR', label: '이동평균가', tab: 'finance', type: 'text', fixed: true },
   { key: 'PEINH_1', label: '가격단위', tab: 'finance', type: 'number', defaultValue: 1, fixed: true },
-
-  // [Tab 10] 원가
   { key: 'HRKFT', label: '오리진그룹', tab: 'cost', type: 'text', fixed: true },
   { key: 'MTORG', label: '자재오리진', tab: 'cost', type: 'text', fixed: true },
   { key: 'KOSGR', label: '간접비그룹', tab: 'cost', type: 'text', fixed: true },
@@ -229,8 +215,6 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'LOSGR', label: '원가계산로트크기', tab: 'cost', type: 'number', defaultValue: 10000, fixed: true },
   { key: 'PLNDPRICE1', label: '계획가격', tab: 'cost', type: 'number', fixed: true },
   { key: 'PLNDPRDATE1', label: '계획가격일', tab: 'cost', type: 'number', fixed: true },
-
-  // [Tab 11] 분류
   { key: 'KLART', label: '클래스유형', tab: 'class', type: 'text', defaultValue: '001', fixed: true },
   { key: 'CLASS', label: '클래스', tab: 'class', type: 'text', defaultValue: 'ZMM001', fixed: true },
   { key: 'MNAME_1', label: '특성1', tab: 'class', type: 'text', defaultValue: 'ZMMC001', fixed: true },
