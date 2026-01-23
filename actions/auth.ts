@@ -1,20 +1,18 @@
 "use server"
 import { supabase } from "@/lib/supabase";
 
-// 로그인 처리 (Supabase sm_users 조회)
+// 1. 로그인 처리
 export async function loginAction(id: string, pw: string) {
   try {
-    // 💡 Supabase에서 ID/PW 일치하는 유저 찾기
     const { data, error } = await supabase
         .from('sm_users')
         .select('*')
         .eq('user_id', id)
         .eq('password', pw)
-        .single(); // 하나만 가져옴
+        .single();
 
     if (error || !data) return { success: false, message: "아이디 또는 비밀번호가 틀립니다." };
     
-    // 승인 상태 체크
     if (data.status !== 'active') {
       return { success: false, message: "관리자 승인 대기 중인 계정입니다." };
     }
@@ -33,10 +31,9 @@ export async function loginAction(id: string, pw: string) {
   }
 }
 
-// 회원가입 신청 (Supabase sm_users 저장)
+// 2. 회원가입 신청
 export async function registerAction(id: string, pw: string, name: string, email: string) {
   try {
-    // ID 중복 체크 (DB단에서 Unique 제약조건이 있지만, 사용자 친화적 메시지를 위해 체크)
     const { data: existing } = await supabase
         .from('sm_users')
         .select('user_id')
@@ -47,7 +44,6 @@ export async function registerAction(id: string, pw: string, name: string, email
       return { success: false, message: "이미 존재하는 아이디입니다." };
     }
 
-    // status: 'pending'으로 저장
     const { error } = await supabase.from('sm_users').insert({
       user_id: id, 
       password: pw, 
@@ -65,13 +61,13 @@ export async function registerAction(id: string, pw: string, name: string, email
   }
 }
 
-// (관리자용) 대기중인 사용자 목록 가져오기
+// 3. (관리자용) 대기중인 사용자 목록 가져오기
 export async function getPendingUsersAction() {
   try {
     const { data, error } = await supabase
         .from('sm_users')
         .select('*')
-        .neq('status', 'active'); // status가 active가 아닌 것 조회
+        .neq('status', 'active');
 
     if (error) throw error;
     
@@ -87,7 +83,7 @@ export async function getPendingUsersAction() {
   }
 }
 
-// (관리자용) 사용자 승인 처리
+// 4. (관리자용) 사용자 승인 처리
 export async function approveUserAction(userId: string) {
   try {
     const { error } = await supabase
@@ -99,5 +95,39 @@ export async function approveUserAction(userId: string) {
     return { success: true };
   } catch (e: any) {
     return { success: false, message: "승인 처리 중 오류: " + e.message };
+  }
+}
+
+// 5. [신규 추가] (관리자용) 전체 회원 명부 가져오기 (페이지네이션)
+// 이 함수가 없어서 에러가 발생했습니다. 꼭 포함시켜 주세요.
+export async function getAllUsersAction(page: number = 1, pageSize: number = 15) {
+  try {
+    // 페이지네이션 범위 계산 (0부터 시작)
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    // 전체 카운트와 데이터 조회
+    const { data, error, count } = await supabase
+        .from('sm_users')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false }) // 최신 가입순
+        .range(from, to);
+
+    if (error) throw error;
+    
+    return { 
+      success: true, 
+      users: data.map((row: any) => ({
+          id: row.user_id,
+          name: row.name,
+          email: row.email,
+          status: row.status,
+          createdAt: row.created_at
+      })),
+      total: count || 0
+    };
+  } catch (e: any) {
+    console.error("Fetch Users Error:", e);
+    return { success: false, users: [], total: 0, message: e.message };
   }
 }

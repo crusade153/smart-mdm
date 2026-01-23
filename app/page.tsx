@@ -50,7 +50,7 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* 3. 메인 콘텐츠 (수직 중앙 정렬, 스크롤 없음) */}
+      {/* 3. 메인 콘텐츠 (수직 중앙 정렬, 스크롤 없음) */} 
       <main className="flex-1 flex flex-col items-center justify-center px-6 z-10 w-full max-w-7xl mx-auto h-full pt-16">
         
         {/* 히어로 섹션 */}
