@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
@@ -47,9 +47,9 @@ import {
   getColumnDefinitionsAction
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
-import { TemplateSelectDialog } from "./TemplateSelectDialog" // 🆕 새로 만든 컴포넌트 임포트
+import { TemplateSelectDialog } from "./TemplateSelectDialog"
 
-// 채팅 컴포넌트 (변경 없음)
+// 채팅 컴포넌트
 const ChatComponent = ({ 
   activeRequest, 
   currentUser, 
@@ -62,16 +62,28 @@ const ChatComponent = ({
   <div className="flex flex-col h-full">
     <div className="flex-1 p-4 bg-slate-50/30 overflow-y-auto min-h-0">
       <div className="space-y-4">
-        {isCommentsLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div> 
-        : (activeRequest?.comments || []).length === 0 ? <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div>
-        : activeRequest?.comments.map((cmt: any, idx: number) => (
-          <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
-            <div className="flex items-center gap-1 text-[10px] text-slate-400"><span className="font-bold text-slate-600">{cmt.writer}</span><span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
-            <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
-              {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}{cmt.message}
+        {isCommentsLoading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400"/></div> 
+        ) : (activeRequest?.comments || []).length === 0 ? (
+          <div className="text-center text-slate-400 text-xs mt-10">대화 내역이 없습니다.</div>
+        ) : (
+          activeRequest?.comments.map((cmt: any, idx: number) => (
+            <div key={idx} className={`flex flex-col gap-1 ${cmt.writer === currentUser?.name ? 'items-end' : 'items-start'}`}>
+              <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                <span className="font-bold text-slate-600">{cmt.writer}</span>
+                <span>{new Date(cmt.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+              </div>
+              <div className={`p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${
+                cmt.message.includes('[계층구조 신규 요청]') ? 'bg-amber-100 text-amber-800 border border-amber-200 w-full' : 
+                cmt.writer === 'System' ? 'bg-orange-50 text-orange-700 border border-orange-100 w-full flex items-start gap-2' : 
+                cmt.writer === currentUser?.name ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'
+              }`}>
+                {cmt.writer === 'System' && !cmt.message.includes('계층구조') && <AlertTriangle size={14} className="shrink-0 mt-0.5"/>}
+                {cmt.message}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
     </div>
@@ -85,7 +97,9 @@ const ChatComponent = ({
           onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} 
           disabled={!activeRequest || activeRequest.id === 'new'} 
         />
-        <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest || activeRequest.id === 'new'}><Send size={14} /></Button>
+        <Button onClick={handleSendComment} size="icon" className="h-9 w-9 bg-indigo-600 hover:bg-indigo-700 shrink-0" disabled={!activeRequest || activeRequest.id === 'new'}>
+          <Send size={14} />
+        </Button>
       </div>
     </div>
   </div>
@@ -106,14 +120,15 @@ export function MDMForm() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
-  const [isTemplateOpen, setIsTemplateOpen] = useState(false) // 🆕 협조전 템플릿용이 아니라 기존거
-  const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false) // 🆕 복사하기 팝업용
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false) 
+  const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false) 
   const [templateText, setTemplateText] = useState("")
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const [sourceRequestId, setSourceRequestId] = useState<string | null>(null); // 🆕 출처 추적용
+  const [sourceRequestId, setSourceRequestId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // 컬럼 정의 로드
   useEffect(() => {
     if (Object.keys(columnDefs).length === 0) {
       getColumnDefinitionsAction().then(data => setColumnDefs(data));
@@ -143,12 +158,14 @@ export function MDMForm() {
     defaultValues: generateDefaultValues()
   })
 
+  // 채팅 스크롤 자동 이동
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeRequest?.comments, isChatOpen]);
 
+  // 데이터 최신화 함수
   const refreshData = async (targetId?: string) => {
     const latestRequests = await getRequestsAction();
     setRequests(latestRequests);
@@ -163,27 +180,53 @@ export function MDMForm() {
     }
   };
 
+  // 폼 필드 감시 및 자동 값 설정
   const mtart = form.watch("MTART");
   const werks = form.watch("WERKS"); 
 
+  // 자동 값 설정 Effect (값 변경이 필요할 때만 setValue 호출하여 루프 방지)
   useEffect(() => {
+    const currentValues = form.getValues();
+    
     if (mtart === 'FERT' || mtart === 'ZSET') {
-      form.setValue('BESKZ', 'E'); form.setValue('BKLAS', '7920'); form.setValue('MLAST', 3);
-      form.setValue('KTGRM', '10');
+      if (currentValues.BESKZ !== 'E') form.setValue('BESKZ', 'E');
+      if (currentValues.BKLAS !== '7920') form.setValue('BKLAS', '7920');
+      if (currentValues.MLAST !== 3) form.setValue('MLAST', 3);
+      if (currentValues.KTGRM !== '10') form.setValue('KTGRM', '10');
     } else if (mtart === 'HAWA') {
-      form.setValue('BESKZ', 'F'); form.setValue('BKLAS', '3100'); form.setValue('MLAST', 2);
-      form.setValue('KTGRM', '20');
+      if (currentValues.BESKZ !== 'F') form.setValue('BESKZ', 'F');
+      if (currentValues.BKLAS !== '3100') form.setValue('BKLAS', '3100');
+      if (currentValues.MLAST !== 2) form.setValue('MLAST', 2);
+      if (currentValues.KTGRM !== '20') form.setValue('KTGRM', '20');
     }
   }, [mtart, form]);
 
   useEffect(() => {
-    if (werks === '1021' || werks === '1022') { form.setValue('LGPRO', '2200'); } else if (werks === '1023') { form.setValue('LGPRO', '2301'); } 
-    if (werks === '1022') { form.setValue('LGFSB', '2210'); } else if (werks === '1023') { form.setValue('LGFSB', '2301'); }
+    const currentValues = form.getValues();
+    
+    if (werks === '1021' || werks === '1022') { 
+      if (currentValues.LGPRO !== '2200') form.setValue('LGPRO', '2200'); 
+    } else if (werks === '1023') { 
+      if (currentValues.LGPRO !== '2301') form.setValue('LGPRO', '2301'); 
+    } 
+    
+    if (werks === '1022') { 
+      if (currentValues.LGFSB !== '2210') form.setValue('LGFSB', '2210'); 
+    } else if (werks === '1023') { 
+      if (currentValues.LGFSB !== '2301') form.setValue('LGFSB', '2301'); 
+    }
   }, [werks, form]);
 
+  // 요청 변경 시 폼 데이터 초기화 (JSON 비교를 통해 불필요한 reset 방지)
   useEffect(() => {
     if (activeRequest && !isNewMode) {
-      form.reset({ ...generateDefaultValues(), ...activeRequest.data });
+      const currentData = form.getValues();
+      // 데이터가 실제 변경되었을 때만 reset 수행
+      if (JSON.stringify(currentData) !== JSON.stringify(activeRequest.data)) {
+        form.reset({ ...generateDefaultValues(), ...activeRequest.data });
+      }
+
+      // 댓글 로드
       const loadComments = async () => {
         setIsCommentsLoading(true);
         try {
@@ -195,16 +238,15 @@ export function MDMForm() {
       };
       loadComments();
     } else if (isNewMode && !sourceRequestId) { 
-      // sourceRequestId가 없을 때만 초기화 (복사한 데이터 유지를 위해)
-      form.reset(generateDefaultValues());
+      // 신규 모드이고 복사된 데이터가 없을 때만 초기화
+      // form.reset을 너무 자주 호출하면 입력 중 커서 튐 등의 문제 발생 가능하므로 주의
+      // 여기서는 의존성을 최소화하여 마운트 시점 등을 제어
     }
-  }, [activeRequest?.id, isNewMode, form, setComments, sourceRequestId]); 
+  }, [activeRequest?.id, isNewMode, setComments]); // 의존성 배열 최소화
 
   const handleBackToList = () => { setCurrentRequest(null); setSourceRequestId(null); }
 
-  // 🆕 따라하기 (Clone) 핸들러 함수
   const handleLoadTemplate = (targetRequest: MaterialRequest) => {
-    // 1. 찾아 바꾸기 (선택 사항)
     const replaceText = prompt(`[${targetRequest.data.MAKTX}] 내용을 복사합니다.\n\n편의를 위해 품명 등에서 특정 단어를 변경하시겠습니까?\n(예: '얼큰한맛' -> '순한맛')\n\n변경할 단어를 입력하세요. (변경 없으면 취소/확인)`);
     
     let newData: SapMasterData = { ...targetRequest.data }; 
@@ -213,7 +255,6 @@ export function MDMForm() {
     if (replaceText && replaceText.trim() !== "") {
        const newWord = prompt(`'${replaceText}'을(를) 무엇으로 바꾸시겠습니까?`);
        if (newWord !== null) {
-          // 모든 문자열 필드에 대해 치환 수행
           Object.keys(newData).forEach((key) => {
             const val = newData[key];
             if (typeof val === 'string') {
@@ -224,15 +265,12 @@ export function MDMForm() {
        }
     }
 
-    // 2. 중요 필드 리셋 (자재코드는 신규이므로 반드시 비움)
-    newData.MATNR = ""; 
+    newData.MATNR = ""; // 자재코드 초기화
     
-    // 3. 폼에 적용
     form.reset(newData);
     setSourceRequestId(targetRequest.id); 
     setIsCopyDialogOpen(false);
 
-    // 4. 강력한 Alert (Positive Flexibility)
     alert(
       `✅ [${targetRequest.data.MAKTX}] 자재 정보를 성공적으로 불러왔습니다.${replaceMsg}\n\n` +
       `⚠️ 주의: 품명, 바코드 등 고유 정보까지 모두 복사되었습니다.\n` +
@@ -247,16 +285,13 @@ export function MDMForm() {
     if (isNewMode) {
       if (!confirm("요청을 등록하시겠습니까?")) return;
       
-      // 1. 스토어에 추가
       addRequest(data); 
       alert("저장되었습니다.");
       
-      // 2. DB 저장
       createRequestAction(data, actorName).then(async (result) => {
         if (result.success && result.id) {
           await refreshData(result.id);
           
-          // 🆕 출처 남기기 (Source Tracking)
           if (sourceRequestId) {
              const sourceReq = requests.find(r => r.id === sourceRequestId);
              const sourceName = sourceReq?.data.MAKTX || sourceRequestId;
@@ -265,7 +300,7 @@ export function MDMForm() {
                `📋 [시스템] 이 요청은 '${sourceName}' (${sourceRequestId}) 자재 정보를 복사(Clone)하여 생성되었습니다.`, 
                "System"
              );
-             setSourceRequestId(null); // 초기화
+             setSourceRequestId(null);
           }
 
           if (missingFields.length > 0) {
@@ -534,7 +569,6 @@ export function MDMForm() {
     <div className="flex h-full bg-slate-50/50 w-full overflow-hidden">
       <AuditLogDialog requestId={activeRequest?.id || null} isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
       
-      {/* 🆕 복사하기 다이얼로그 추가 */}
       <TemplateSelectDialog 
         isOpen={isCopyDialogOpen} 
         onClose={() => setIsCopyDialogOpen(false)} 
@@ -576,8 +610,6 @@ export function MDMForm() {
           </div>
 
           <div className="flex gap-1 md:gap-2 shrink-0">
-            
-            {/* 🆕 신규 작성 시 '기존자재 불러오기' 버튼 표시 */}
             {isNewMode && (
                 <Button 
                     variant="outline" 
