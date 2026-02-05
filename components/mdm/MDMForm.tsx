@@ -208,7 +208,10 @@ export function MDMForm() {
       if (currentValues.LGPRO !== '2200') form.setValue('LGPRO', '2200'); 
     } else if (werks === '1023') { 
       if (currentValues.LGPRO !== '2301') form.setValue('LGPRO', '2301'); 
-    } 
+    } else if (werks === '1031') {
+      // 💡 [수정] 1031 선택 시 LGPRO 3000 자동 세팅
+      if (currentValues.LGPRO !== '3000') form.setValue('LGPRO', '3000');
+    }
     
     if (werks === '1022') { 
       if (currentValues.LGFSB !== '2210') form.setValue('LGFSB', '2210'); 
@@ -511,7 +514,7 @@ export function MDMForm() {
     if (field.key === 'MATNR') isReadOnly = !canEditSapCode; 
     
     if (
-      (field.key === 'LGPRO' && ['1021','1022','1023'].includes(werks || '')) || 
+      (field.key === 'LGPRO' && ['1021','1022','1023','1031'].includes(werks || '')) || 
       (field.key === 'LGFSB' && ['1022','1023'].includes(werks || ''))
     ) {
       isReadOnly = true;
@@ -523,7 +526,18 @@ export function MDMForm() {
     else fieldStyle += "bg-white";
 
     if (field.key === 'MATNR') return <FormControl><div className="flex gap-2 w-full"><Input {...fieldProps} value={fieldProps.value || ''} readOnly={isReadOnly} className={fieldStyle} />{isReadOnly && <Lock size={14} className="text-slate-400"/>}</div></FormControl>;
+    
+    // [기존 1021 로직]
     if (field.key === 'LGFSB' && werks === '1021') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent><SelectItem value="2101">2101 냉동</SelectItem><SelectItem value="2102">2102 냉장</SelectItem><SelectItem value="2103">2103 상온</SelectItem></SelectContent></Select>;
+    
+    // 💡 [수정] 1031용 LGFSB 선택 로직 추가
+    if (field.key === 'LGFSB' && werks === '1031') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>
+      <SelectItem value="3000">3000 물류창고</SelectItem>
+      <SelectItem value="3300">3300 생산실적창고</SelectItem>
+      <SelectItem value="9000">9000 오드그로서 창고</SelectItem>
+      <SelectItem value="9100">9100 미식마켓 창고</SelectItem>
+    </SelectContent></Select>;
+
     if (field.type === 'custom_prdha') return <FormControl><div className={isReadOnly ? "pointer-events-none opacity-60" : "w-full"}><HierarchySelector value={fieldProps.value} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /></div></FormControl>;
     
     if (field.type === 'select' && field.options) {

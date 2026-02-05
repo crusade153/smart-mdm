@@ -38,7 +38,7 @@ const PLANT_OPTIONS = {
   '1021': '1021 (K1 - 냉동,조미)',
   '1022': '1022 (K3 - 라면)',
   '1023': '1023 (K2 - 즉석밥)',
-  '1031': '1031 (FBH - 물류)'
+  '1031': '1031 (FBH - 물류)' // 1031 사용 예정
 };
 
 export const MDM_FORM_SCHEMA: FieldMeta[] = [
@@ -49,7 +49,7 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
     tab: 'basic', 
     type: 'select', 
     required: true, 
-    options: PLANT_OPTIONS // ✅ 수정된 상세 옵션 적용
+    options: PLANT_OPTIONS 
   },
   { key: 'MTART', label: '자재유형', tab: 'basic', type: 'select', required: true, options: {'FERT':'FERT (완제품)', 'ZSET':'ZSET (세트)', 'HAWA':'HAWA (상품)'} },
   { key: 'MBRSH', label: '산업유형', tab: 'basic', type: 'text', fixed: true },
@@ -74,7 +74,17 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
   { key: 'WRKST', label: '기본자재', tab: 'basic', type: 'text', fixed: true },
 
   // [Tab 2] 추가정보
-  { key: 'MEINH', label: '환산단위(물류)', tab: 'add', type: 'text', required: true, defaultValue: 'BOX', fixed: false },
+  // 💡 [수정됨] MEINH을 select 타입으로 변경하고 옵션 지정
+  { 
+    key: 'MEINH', 
+    label: '환산단위(물류)', 
+    tab: 'add', 
+    type: 'select', 
+    required: true, 
+    defaultValue: 'BOX', 
+    fixed: false,
+    options: { 'EA': 'EA', 'BOX': 'BOX', 'TOTE': 'TOTE', 'SIK': 'SIK' } 
+  },
   { key: 'UMREZ', label: '환산분자', tab: 'add', type: 'number', required: true },
   { key: 'UMREN', label: '환산분모', tab: 'add', type: 'number', required: true, defaultValue: 1, fixed: true },
   { key: 'NUMTP', label: '국제물품번호(EAN) 범주', tab: 'add', type: 'text', required: true },
@@ -125,9 +135,9 @@ export const MDM_FORM_SCHEMA: FieldMeta[] = [
     key: 'DWERK', 
     label: '납품플랜트', 
     tab: 'sales', 
-    type: 'select', // ✅ text -> select 변경
+    type: 'select', 
     required: true,
-    options: PLANT_OPTIONS // ✅ 수정된 상세 옵션 적용
+    options: PLANT_OPTIONS 
   },
   { key: 'MSTAV', label: '유통상태', tab: 'sales', type: 'text', fixed: true },
   { key: 'MSTDV', label: '유통상태시작일', tab: 'sales', type: 'date', fixed: true },
