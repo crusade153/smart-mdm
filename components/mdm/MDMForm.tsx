@@ -129,7 +129,6 @@ export function MDMForm() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // 컬럼 정의 로드
   useEffect(() => {
     if (Object.keys(columnDefs).length === 0) {
       getColumnDefinitionsAction().then(data => setColumnDefs(data));
@@ -142,14 +141,13 @@ export function MDMForm() {
   const isReviewStatus = activeRequest?.status === 'Review'; 
 
   const canEdit = isNewMode || (isOwner && isRequestedStatus) || isAdmin;
-  const canEditSapCode = isAdmin && isReviewStatus;
+  // 💡 [수정] 관리자는 상태와 무관하게 언제든 SAP Code 수정 가능
+  const canEditSapCode = isAdmin; 
   const canDelete = !isNewMode && activeRequest && (isAdmin || isOwner);
 
-  // ⚠️ [중요 수정] 초기값을 undefined가 아닌 빈 문자열로 강제하여 Uncontrolled 에러 방지
   const generateDefaultValues = () => {
     const defaults: any = {};
     MDM_FORM_SCHEMA.forEach(field => {
-      // defaultValue가 있으면 사용, 없으면 빈 문자열('') 할당
       defaults[field.key] = field.defaultValue !== undefined ? field.defaultValue : "";
     });
     return defaults;
@@ -157,29 +155,22 @@ export function MDMForm() {
 
   const form = useForm<SapMasterData>({
     defaultValues: generateDefaultValues(),
-    mode: "onChange" // 값 변경 시 즉시 검증
+    mode: "onChange"
   })
 
-  // 품명 자동 생성 핸들러
   const handleNameGenerate = (generatedName: string) => {
     if (!canEdit) return;
-    
-    // form 값 업데이트 (dirty 상태로 만듦)
     form.setValue("MAKTX", generatedName, { 
-      shouldValidate: true, 
-      shouldDirty: true,
-      shouldTouch: true 
+      shouldValidate: true, shouldDirty: true, shouldTouch: true 
     });
   };
 
-  // 채팅 스크롤 자동 이동
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeRequest?.comments, isChatOpen]);
 
-  // 데이터 최신화 함수
   const refreshData = async (targetId?: string) => {
     const latestRequests = await getRequestsAction();
     setRequests(latestRequests);
@@ -194,11 +185,9 @@ export function MDMForm() {
     }
   };
 
-  // 폼 필드 감시 및 자동 값 설정
   const mtart = form.watch("MTART");
   const werks = form.watch("WERKS"); 
 
-  // 자동 값 설정 Effect
   useEffect(() => {
     const currentValues = form.getValues();
     
@@ -212,6 +201,8 @@ export function MDMForm() {
       if (currentValues.BKLAS !== '3100') form.setValue('BKLAS', '3100');
       if (currentValues.MLAST !== 2) form.setValue('MLAST', 2);
       if (currentValues.KTGRM !== '20') form.setValue('KTGRM', '20');
+      // 💡 [추가] HAWA 선택 시 구매그룹 H01 자동 입력
+      if (currentValues.EKGRP !== 'H01') form.setValue('EKGRP', 'H01');
     }
   }, [mtart, form]);
 
@@ -233,17 +224,13 @@ export function MDMForm() {
     }
   }, [werks, form]);
 
-  // 요청 변경 시 폼 데이터 초기화
   useEffect(() => {
     if (activeRequest && !isNewMode) {
       const currentData = form.getValues();
       if (JSON.stringify(currentData) !== JSON.stringify(activeRequest.data)) {
-        // DB 데이터에 없는 필드도 빈 값으로 채워서 reset
         const mergedData = { ...generateDefaultValues(), ...activeRequest.data };
         form.reset(mergedData);
       }
-
-      // 댓글 로드
       const loadComments = async () => {
         setIsCommentsLoading(true);
         try {
@@ -254,9 +241,6 @@ export function MDMForm() {
         }
       };
       loadComments();
-    } else if (isNewMode && !sourceRequestId) {
-        // 신규 모드일 때 폼이 비어있지 않다면 초기화 (이전 잔여 데이터 제거)
-        // 하지만 사용자가 입력 중일 수 있으므로 sourceRequestId가 없을 때만
     }
   }, [activeRequest?.id, isNewMode, setComments]);
 
@@ -281,11 +265,8 @@ export function MDMForm() {
        }
     }
 
-    newData.MATNR = ""; // 자재코드 초기화
-    
-    // undefined 방지를 위해 defaultValues와 병합
+    newData.MATNR = ""; 
     form.reset({ ...generateDefaultValues(), ...newData });
-    
     setSourceRequestId(targetRequest.id); 
     setIsCopyDialogOpen(false);
 
@@ -493,6 +474,7 @@ export function MDMForm() {
 
   const copyToClipboard = () => { navigator.clipboard.writeText(templateText); alert("복사되었습니다."); setIsTemplateOpen(false); }
 
+  // 💡 [수정] 이미지 렌더링을 위해 툴팁 로직 강화
   const renderLabelWithHelp = (field: FieldMeta) => {
     const def = columnDefs[field.key];
     return (
@@ -506,10 +488,23 @@ export function MDMForm() {
             <PopoverTrigger asChild>
               <button type="button" className="text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none"><HelpCircle size={13} /></button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0 overflow-hidden shadow-xl border-indigo-100" side="right" align="start">
+            <PopoverContent className="w-96 p-0 overflow-hidden shadow-xl border-indigo-100" side="right" align="start">
               <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex items-center gap-2"><BookOpen size={16} className="text-indigo-600"/><h4 className="font-bold text-indigo-900 text-sm">{field.label}</h4></div>
               <div className="p-4 space-y-3 bg-white text-xs">
                 <p className="text-slate-600 font-medium">{def.definition}</p>
+                {/* 💡 [추가] 사용 예시 강조 표시 */}
+                {def.usage && (
+                   <div className="p-2 bg-slate-50 rounded border border-slate-100 text-slate-700">
+                     <span className="font-bold text-indigo-600 mr-1">💡 예시:</span> {def.usage}
+                   </div>
+                )}
+                {/* 💡 [추가] 이미지 렌더링 */}
+                {def.image && (
+                    <div className="mt-2 border rounded-md overflow-hidden">
+                        <img src={def.image} alt="Guide Image" className="w-full h-auto object-cover" />
+                        <div className="bg-slate-100 text-[10px] text-center py-1 text-slate-500">참고 예시 이미지</div>
+                    </div>
+                )}
                 {def.risk && (
                   <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded text-red-700">
                     <span className="font-bold block mb-1">⚠️ 미입력/오류 리스크</span>
@@ -540,7 +535,6 @@ export function MDMForm() {
     else if (field.required) fieldStyle += "bg-amber-50 border-amber-200";
     else fieldStyle += "bg-white";
 
-    // ⚠️ [중요 수정] fieldProps.value가 undefined일 경우 빈 문자열로 대체하여 에러 방지
     const safeValue = fieldProps.value ?? '';
 
     if (field.key === 'MATNR') return <FormControl><div className="flex gap-2 w-full"><Input {...fieldProps} value={safeValue} readOnly={isReadOnly} className={fieldStyle} />{isReadOnly && <Lock size={14} className="text-slate-400"/>}</div></FormControl>;
@@ -581,7 +575,6 @@ export function MDMForm() {
     if (field.type === 'ref_select' && field.refKey) return <Select onValueChange={fieldProps.onChange} value={String(safeValue)} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{(MOCK_REF_DATA as any)[field.refKey]?.map((item: any) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
     if (field.type === 'custom_matkl') return <Select onValueChange={fieldProps.onChange} value={String(safeValue)} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{MOCK_MAT_GROUP.map((item) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
     
-    // 기본 Input
     return <FormControl>
         <Input 
             {...fieldProps} 

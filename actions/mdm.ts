@@ -1,7 +1,7 @@
 "use server"
 
-import { supabase } from "@/lib/supabase"; // ✅ Supabase 클라이언트
-import { getSheetByTitle } from "@/lib/google-sheets"; // ✅ 구글 시트 (계층구조용 유지)
+import { supabase } from "@/lib/supabase"; 
+import { getSheetByTitle } from "@/lib/google-sheets"; 
 import { SapMasterData } from "@/types/mdm";
 import { MDM_FORM_SCHEMA } from "@/lib/constants/sap-fields";
 
@@ -21,9 +21,8 @@ async function logAudit(
   newValue: string
 ) {
   try {
-    // 💡 sm_audit_logs 테이블에 insert
     const { error } = await supabase.from('sm_audit_logs').insert({
-        id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`, // ID 생성
+        id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`, 
         request_id: requestId,
         actor_name: actorName,
         action_type: actionType,
@@ -42,17 +41,15 @@ export async function createRequestAction(data: SapMasterData, requesterName: st
   try {
     const newId = `REQ-${Date.now()}`;
 
-    // 💡 sm_requests 테이블에 insert (SAP 필드는 sap_data 컬럼에 JSON으로 통째로 저장)
     const { error } = await supabase.from('sm_requests').insert({
         id: newId,
         status: 'Requested',
         requester_name: requesterName,
-        sap_data: data // JSONB 컬럼에 객체 바로 저장
+        sap_data: data 
     });
 
     if (error) throw error;
     
-    // 생성 로그 기록
     await logAudit(newId, requesterName, 'CREATE', '-', '-', '신규 생성');
 
     return { success: true, message: "요청이 성공적으로 저장되었습니다.", id: newId };
@@ -66,7 +63,6 @@ export async function createRequestAction(data: SapMasterData, requesterName: st
 // 2. 요청 목록 불러오기 (Supabase)
 export async function getRequestsAction() {
   try {
-    // 💡 sm_requests 테이블 조회 (작성일 역순 정렬)
     const { data, error } = await supabase
         .from('sm_requests')
         .select('*')
@@ -74,15 +70,14 @@ export async function getRequestsAction() {
 
     if (error) throw error;
 
-    // DB 데이터를 프론트엔드 포맷(MaterialRequest)으로 변환
     return data.map((row: any) => ({
         id: row.id,
         status: row.status,
         requesterName: row.requester_name,
         createdAt: row.created_at,
         completedAt: row.completed_at,
-        data: row.sap_data, // JSONB -> 객체로 자동 변환됨
-        comments: [] // 댓글은 상세 조회 시 가져옴
+        data: row.sap_data, 
+        comments: [] 
     }));
 
   } catch (error) {
@@ -115,7 +110,7 @@ export async function getCommentsAction(requestId: string) {
         .from('sm_comments')
         .select('*')
         .eq('request_id', requestId)
-        .order('created_at', { ascending: true }); // 오래된 순 정렬
+        .order('created_at', { ascending: true }); 
 
     if (error) throw error;
 
@@ -133,7 +128,6 @@ export async function getCommentsAction(requestId: string) {
 // 5. 요청 수정 (Supabase)
 export async function updateRequestAction(requestId: string, data: SapMasterData, actorName: string) {
   try {
-    // 1. 기존 데이터 가져오기 (비교용)
     const { data: oldRow, error: fetchError } = await supabase
         .from('sm_requests')
         .select('sap_data')
@@ -145,14 +139,11 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
     const oldData = oldRow.sap_data || {};
     const changes: { label: string, old: string, new: string }[] = [];
 
-    // 2. 변경 감지 로직
     Object.entries(data).forEach(([key, newValue]) => {
         const oldValue = oldData[key];
         
-        // 값이 서로 다를 경우
         if (String(oldValue || '').trim() !== String(newValue || '').trim()) {
             const isInitialEntry = !oldValue || String(oldValue).trim() === '';
-            // 이력에는 '수정'인 경우만 기록 (최초 입력 제외)
             if (!isInitialEntry) {
                 changes.push({ 
                     label: getFieldLabel(key),
@@ -163,7 +154,6 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
         }
     });
 
-    // 3. 데이터 업데이트 (JSONB 통째로 업데이트)
     const { error: updateError } = await supabase
         .from('sm_requests')
         .update({ sap_data: data })
@@ -171,7 +161,6 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
 
     if (updateError) throw updateError;
 
-    // 4. 이력 및 코멘트 저장
     if (changes.length > 0) {
         await Promise.all(changes.map(change => 
             logAudit(requestId, actorName, 'UPDATE', change.label, change.old, change.new)
@@ -192,7 +181,6 @@ export async function updateRequestAction(requestId: string, data: SapMasterData
 // 6. 요청 삭제 (Supabase)
 export async function deleteRequestAction(requestId: string) {
   try {
-    // Cascade 설정 덕분에 requests만 지우면 댓글/로그도 자동 삭제됨
     const { error } = await supabase
         .from('sm_requests')
         .delete()
@@ -209,7 +197,6 @@ export async function deleteRequestAction(requestId: string) {
 // 7. 요청 상태 변경 (Supabase)
 export async function updateStatusAction(requestId: string, status: string, actorName: string) {
   try {
-    // 기존 상태 조회
     const { data: row, error: fetchError } = await supabase
         .from('sm_requests')
         .select('status')
@@ -270,19 +257,29 @@ export async function getAuditLogsAction(requestId: string) {
   }
 }
 
+// 💡 [수정] 이미지 속성 추가
 export interface ColumnDef {
   key: string;
   definition: string;
   usage: string;
   risk: string;
+  image?: string; // 이미지 경로 추가
 }
 
-// 🚨 [복구] 사용자가 제공한 툴팁 데이터 하드코딩 (Risk 포함)
-// ✅ [수정] 환산단위 관련 툴팁 내용 업데이트
+// 🚨 [복구 & 수정] 사용자가 제공한 툴팁 데이터 (Risk 및 이미지 가이드 포함)
 const STATIC_COLUMN_DEFS: Record<string, ColumnDef> = {
   "WERKS": { key: "WERKS", definition: "제품을 생산하거나 보관하고, 유통하는 물리적/논리적 거점 코드", usage: "1021(K1), 1022(K3) 등 공장 지정", risk: "생산/재고가 엉뚱한 공장으로 지정되어 물류 프로세스 마비" },
   "MTART": { key: "MTART", definition: "자재의 성격(원자재, 반제품, 완제품 등)을 구분하는 기준", usage: "FERT(제품), HAWA(상품) 등", risk: "제품 : 하림산업에서 생산, 상품 : 외부에서 구매하여 판매목적" },
-  "MAKTX": { key: "MAKTX", definition: "자재를 식별하기 위한 텍스트 설명 (품명)", usage: "예: 푸디버디 빨강라면 컵", risk: "검색 및 식별이 어려워져 오출고/오투입 발생" },
+  
+  // 💡 [수정] MAKTX 툴팁 강화 (The미식 가이드)
+  "MAKTX": { 
+      key: "MAKTX", 
+      definition: "자재를 식별하기 위한 텍스트 설명 (품명)", 
+      usage: "예: The미식 유니자장면 (The미식 X -> 더미식 O)", 
+      risk: "검색 및 식별",
+      image: "/images/naming_guide.png" // 📸 예시 이미지 연결 (public/images에 파일 필요)
+  },
+  
   "MATNR": { key: "MATNR", definition: "시스템 내에서 자재를 식별하는 유일한 ID (Primary Key)", usage: "50000036 (자동 채번)", risk: "중복 생성 시 재고 관리 이원화 및 데이터 정합성 훼손" },
   "MEINS": { key: "MEINS", definition: "재고 관리의 기준이 되는 최소 단위", usage: "EA(개), KG(킬로그램), G(그램)", risk: "모든 수량 계산의 기준이므로 잘못 설정 시 재고 수량 전체 오류" },
   "MATKL": { key: "MATKL", definition: "자재를 리포팅 및 분석 목적으로 묶는 분류 코드", usage: "101010(계육), 804010(라면) 등", risk: "구매/판매 분석 시 데이터가 누락되거나 엉뚱한 그룹으로 집계됨" },
@@ -332,7 +329,6 @@ const STATIC_COLUMN_DEFS: Record<string, ColumnDef> = {
   "MWERT_16": { key: "MWERT_16", definition: "한 팔레트에 적재 가능한 최대 박스 수량", usage: "40 (Box/Pallet)", risk: "과적 또는 공간 낭비, 물류비 증가" },
   "MWERT_17": { key: "MWERT_17", definition: "물류 박스 식별용 바코드 (ITF-14 등)", usage: "1880...", risk: "물류 센터 입출고 스캔 불가 및 재고 추적 실패" },
   
-  // ✅ [수정] 구성 단위 (구 환산단위) 관련 툴팁 정의 업데이트
   "EXTRA_MEINH": { 
       key: "EXTRA_MEINH", 
       definition: "본품(EA)을 구성하는 하위 단위 (예: 라면 번들 1EA 내의 4SIK, 만두 2봉)", 
@@ -354,7 +350,6 @@ export async function getColumnDefinitionsAction(): Promise<Record<string, Colum
   return STATIC_COLUMN_DEFS;
 }
 
-// 10. 제품계층구조 불러오기 (Google Sheets 사용 - 그대로 유지)
 export interface HierarchyItem {
   level: number;
   code: string;
