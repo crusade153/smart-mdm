@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { 
   Save, MessageSquare, Send, AlertTriangle, 
@@ -48,6 +48,7 @@ import {
 } from "@/actions/mdm"
 import { AuditLogDialog } from "./AuditLogDialog" 
 import { TemplateSelectDialog } from "./TemplateSelectDialog"
+import { ProductNameGenerator } from "./ProductNameGenerator"
 
 // 채팅 컴포넌트
 const ChatComponent = ({ 
@@ -144,19 +145,32 @@ export function MDMForm() {
   const canEditSapCode = isAdmin && isReviewStatus;
   const canDelete = !isNewMode && activeRequest && (isAdmin || isOwner);
 
+  // ⚠️ [중요 수정] 초기값을 undefined가 아닌 빈 문자열로 강제하여 Uncontrolled 에러 방지
   const generateDefaultValues = () => {
     const defaults: any = {};
     MDM_FORM_SCHEMA.forEach(field => {
-      if (field.defaultValue !== undefined) {
-        defaults[field.key] = field.defaultValue;
-      }
+      // defaultValue가 있으면 사용, 없으면 빈 문자열('') 할당
+      defaults[field.key] = field.defaultValue !== undefined ? field.defaultValue : "";
     });
     return defaults;
   };
 
   const form = useForm<SapMasterData>({
-    defaultValues: generateDefaultValues()
+    defaultValues: generateDefaultValues(),
+    mode: "onChange" // 값 변경 시 즉시 검증
   })
+
+  // 품명 자동 생성 핸들러
+  const handleNameGenerate = (generatedName: string) => {
+    if (!canEdit) return;
+    
+    // form 값 업데이트 (dirty 상태로 만듦)
+    form.setValue("MAKTX", generatedName, { 
+      shouldValidate: true, 
+      shouldDirty: true,
+      shouldTouch: true 
+    });
+  };
 
   // 채팅 스크롤 자동 이동
   useEffect(() => {
@@ -184,7 +198,7 @@ export function MDMForm() {
   const mtart = form.watch("MTART");
   const werks = form.watch("WERKS"); 
 
-  // 자동 값 설정 Effect (값 변경이 필요할 때만 setValue 호출하여 루프 방지)
+  // 자동 값 설정 Effect
   useEffect(() => {
     const currentValues = form.getValues();
     
@@ -209,7 +223,6 @@ export function MDMForm() {
     } else if (werks === '1023') { 
       if (currentValues.LGPRO !== '2301') form.setValue('LGPRO', '2301'); 
     } else if (werks === '1031') {
-      // 💡 [수정] 1031 선택 시 LGPRO 3000 자동 세팅
       if (currentValues.LGPRO !== '3000') form.setValue('LGPRO', '3000');
     }
     
@@ -220,13 +233,14 @@ export function MDMForm() {
     }
   }, [werks, form]);
 
-  // 요청 변경 시 폼 데이터 초기화 (JSON 비교를 통해 불필요한 reset 방지)
+  // 요청 변경 시 폼 데이터 초기화
   useEffect(() => {
     if (activeRequest && !isNewMode) {
       const currentData = form.getValues();
-      // 데이터가 실제 변경되었을 때만 reset 수행
       if (JSON.stringify(currentData) !== JSON.stringify(activeRequest.data)) {
-        form.reset({ ...generateDefaultValues(), ...activeRequest.data });
+        // DB 데이터에 없는 필드도 빈 값으로 채워서 reset
+        const mergedData = { ...generateDefaultValues(), ...activeRequest.data };
+        form.reset(mergedData);
       }
 
       // 댓글 로드
@@ -240,12 +254,11 @@ export function MDMForm() {
         }
       };
       loadComments();
-    } else if (isNewMode && !sourceRequestId) { 
-      // 신규 모드이고 복사된 데이터가 없을 때만 초기화
-      // form.reset을 너무 자주 호출하면 입력 중 커서 튐 등의 문제 발생 가능하므로 주의
-      // 여기서는 의존성을 최소화하여 마운트 시점 등을 제어
+    } else if (isNewMode && !sourceRequestId) {
+        // 신규 모드일 때 폼이 비어있지 않다면 초기화 (이전 잔여 데이터 제거)
+        // 하지만 사용자가 입력 중일 수 있으므로 sourceRequestId가 없을 때만
     }
-  }, [activeRequest?.id, isNewMode, setComments]); // 의존성 배열 최소화
+  }, [activeRequest?.id, isNewMode, setComments]);
 
   const handleBackToList = () => { setCurrentRequest(null); setSourceRequestId(null); }
 
@@ -270,7 +283,9 @@ export function MDMForm() {
 
     newData.MATNR = ""; // 자재코드 초기화
     
-    form.reset(newData);
+    // undefined 방지를 위해 defaultValues와 병합
+    form.reset({ ...generateDefaultValues(), ...newData });
+    
     setSourceRequestId(targetRequest.id); 
     setIsCopyDialogOpen(false);
 
@@ -525,26 +540,26 @@ export function MDMForm() {
     else if (field.required) fieldStyle += "bg-amber-50 border-amber-200";
     else fieldStyle += "bg-white";
 
-    if (field.key === 'MATNR') return <FormControl><div className="flex gap-2 w-full"><Input {...fieldProps} value={fieldProps.value || ''} readOnly={isReadOnly} className={fieldStyle} />{isReadOnly && <Lock size={14} className="text-slate-400"/>}</div></FormControl>;
+    // ⚠️ [중요 수정] fieldProps.value가 undefined일 경우 빈 문자열로 대체하여 에러 방지
+    const safeValue = fieldProps.value ?? '';
+
+    if (field.key === 'MATNR') return <FormControl><div className="flex gap-2 w-full"><Input {...fieldProps} value={safeValue} readOnly={isReadOnly} className={fieldStyle} />{isReadOnly && <Lock size={14} className="text-slate-400"/>}</div></FormControl>;
     
-    // [기존 1021 로직]
-    if (field.key === 'LGFSB' && werks === '1021') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent><SelectItem value="2101">2101 냉동</SelectItem><SelectItem value="2102">2102 냉장</SelectItem><SelectItem value="2103">2103 상온</SelectItem></SelectContent></Select>;
-    
-    // 💡 [수정] 1031용 LGFSB 선택 로직 추가
-    if (field.key === 'LGFSB' && werks === '1031') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>
+    if (field.key === 'LGFSB' && werks === '1021') return <Select onValueChange={fieldProps.onChange} value={String(safeValue)} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent><SelectItem value="2101">2101 냉동</SelectItem><SelectItem value="2102">2102 냉장</SelectItem><SelectItem value="2103">2103 상온</SelectItem></SelectContent></Select>;
+    if (field.key === 'LGFSB' && werks === '1031') return <Select onValueChange={fieldProps.onChange} value={String(safeValue)} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>
       <SelectItem value="3000">3000 물류창고</SelectItem>
       <SelectItem value="3300">3300 생산실적창고</SelectItem>
       <SelectItem value="9000">9000 오드그로서 창고</SelectItem>
       <SelectItem value="9100">9100 미식마켓 창고</SelectItem>
     </SelectContent></Select>;
 
-    if (field.type === 'custom_prdha') return <FormControl><div className={isReadOnly ? "pointer-events-none opacity-60" : "w-full"}><HierarchySelector value={fieldProps.value} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /></div></FormControl>;
+    if (field.type === 'custom_prdha') return <FormControl><div className={isReadOnly ? "pointer-events-none opacity-60" : "w-full"}><HierarchySelector value={safeValue} onChange={fieldProps.onChange} onRequestNew={handleHierarchyRequest} /></div></FormControl>;
     
     if (field.type === 'select' && field.options) {
       return (
         <Select 
           onValueChange={(val) => fieldProps.onChange(val === '_EMPTY_' ? '' : val)} 
-          value={fieldProps.value === '' ? '_EMPTY_' : String(fieldProps.value || '')} 
+          value={safeValue === '' ? '_EMPTY_' : String(safeValue)} 
           disabled={isReadOnly}
         >
           <FormControl>
@@ -563,9 +578,19 @@ export function MDMForm() {
       );
     }
 
-    if (field.type === 'ref_select' && field.refKey) return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{(MOCK_REF_DATA as any)[field.refKey]?.map((item: any) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
-    if (field.type === 'custom_matkl') return <Select onValueChange={fieldProps.onChange} value={String(fieldProps.value || '')} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{MOCK_MAT_GROUP.map((item) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
-    return <FormControl><Input {...fieldProps} value={fieldProps.value || ''} type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} readOnly={isReadOnly} className={fieldStyle} /></FormControl>;
+    if (field.type === 'ref_select' && field.refKey) return <Select onValueChange={fieldProps.onChange} value={String(safeValue)} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{(MOCK_REF_DATA as any)[field.refKey]?.map((item: any) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
+    if (field.type === 'custom_matkl') return <Select onValueChange={fieldProps.onChange} value={String(safeValue)} disabled={isReadOnly}><FormControl><SelectTrigger className={fieldStyle}><SelectValue placeholder="선택" /></SelectTrigger></FormControl><SelectContent>{MOCK_MAT_GROUP.map((item) => <SelectItem key={item.code} value={item.code}>[{item.code}] {item.name}</SelectItem>)}</SelectContent></Select>;
+    
+    // 기본 Input
+    return <FormControl>
+        <Input 
+            {...fieldProps} 
+            value={safeValue} 
+            type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} 
+            readOnly={isReadOnly} 
+            className={fieldStyle} 
+        />
+    </FormControl>;
   }
 
   if (!activeRequest && !currentRequest) {
@@ -694,6 +719,13 @@ export function MDMForm() {
                 {FORM_TABS.map((tab) => (
                   <TabsContent key={tab.id} value={tab.id} className="mt-0">
                     <Card className="p-4 md:p-6 border-slate-200 shadow-sm">
+                      {/* 기본정보 탭일 때 상단에 품명 생성기 표시 */}
+                      {tab.id === 'basic' && canEdit && (
+                        <div className="mb-6">
+                          <ProductNameGenerator onNameChange={handleNameGenerate} />
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-5">
                         {MDM_FORM_SCHEMA.filter(f => f.tab === tab.id).map((field) => (
                           <div key={field.key} className={field.type === 'custom_prdha' ? 'col-span-full' : ''}>
@@ -701,7 +733,21 @@ export function MDMForm() {
                               render={({ field: fieldProps }) => (
                                 <FormItem className="space-y-1">
                                   {renderLabelWithHelp(field)} 
-                                  {renderFieldInput(field, fieldProps)}
+                                  {/* MAKTX 필드는 생성기를 통해서만 입력하도록 readOnly 처리 */}
+                                  {field.key === 'MAKTX' && canEdit ? (
+                                    <FormControl>
+                                      <Input 
+                                        {...fieldProps} 
+                                        // ⚠️ undefined일 경우 빈 문자열로 변환 (Uncontrolled 방지)
+                                        value={fieldProps.value ?? ''}
+                                        readOnly 
+                                        className="h-9 text-sm w-full bg-slate-100 text-slate-600 font-bold cursor-not-allowed" 
+                                        placeholder="위 생성기를 통해 자동 입력됩니다."
+                                      />
+                                    </FormControl>
+                                  ) : (
+                                    renderFieldInput(field, fieldProps)
+                                  )}
                                   <FormMessage className="text-[10px]" />
                                 </FormItem>
                               )}
