@@ -71,7 +71,9 @@ export function FeedbackDialog({ isOpen, onClose }: Props) {
 
     if (!confirm("답변을 등록하시겠습니까?")) return;
     
-    const result = await replyFeedbackAction(id, text);
+    // 🚨 [수정됨] 3번째 인자로 작성자 이름(currentUser.name) 전달하여 에러 해결
+    const result = await replyFeedbackAction(id, text, currentUser?.name || 'Admin');
+    
     if (result.success) {
       loadData();
       setReplyText(prev => ({...prev, [id]: ""})); // 입력창 초기화

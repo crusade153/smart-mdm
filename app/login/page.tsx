@@ -29,7 +29,8 @@ export default function LoginPage() {
     
     if (result.success && result.user) {
       setLoginUser(result.user);
-      router.push("/main");
+      // 🚨 [수정됨] 대시보드로 이동
+      router.push("/dashboard");
     } else {
       alert(result.message);
     }
