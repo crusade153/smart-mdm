@@ -59,8 +59,13 @@ export function ProductNameGenerator({ data, onDataChange, onNameChange }: Props
     const part1 = promo && promo.trim() !== '' ? `[${promo}] ` : ""; 
     const part2 = brand && brand.trim() !== '' ? `${brand} ` : "";
     const part3 = name ? name : "";
-    const part4 = weight ? ` ${weight}${unit}` : "";
-    const part5 = bundleQty && bundleQty !== "1" ? ` * ${bundleQty}` : ""; // 1개일 땐 생략
+    
+    // TOTE일 경우 TOT로 명칭 변경 처리
+    const displayUnit = unit === "TOTE" ? "TOT" : unit;
+    const part4 = weight ? ` ${weight}${displayUnit}` : "";
+    
+    // 번들 수량이 1일 때도 생략하지 않고 표시되도록 수정
+    const part5 = bundleQty ? ` * ${bundleQty}` : "";
     const part6 = boxQty ? ` (${boxQty}/box)` : "";
 
     const fullName = `${part1}${part2}${part3}${part4}${part5}${part6}`.trim();
@@ -150,7 +155,13 @@ export function ProductNameGenerator({ data, onDataChange, onNameChange }: Props
             <Input placeholder="103" type="number" className="h-9 text-xs bg-slate-50 text-right" value={data.weight} onChange={(e) => updateData({ weight: e.target.value })} />
             <Select value={data.unit} onValueChange={(val) => updateData({ unit: val })}>
               <SelectTrigger className="h-9 w-[4.5rem] text-xs bg-slate-50"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="g">g</SelectItem><SelectItem value="kg">kg</SelectItem><SelectItem value="ml">ml</SelectItem><SelectItem value="L">L</SelectItem></SelectContent>
+              <SelectContent>
+                <SelectItem value="g">g</SelectItem>
+                <SelectItem value="kg">kg</SelectItem>
+                <SelectItem value="ml">ml</SelectItem>
+                <SelectItem value="L">L</SelectItem>
+                <SelectItem value="TOTE">TOTE</SelectItem>
+              </SelectContent>
             </Select>
           </div>
         </div>
