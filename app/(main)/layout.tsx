@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { useMDMStore } from "@/stores/useMDMStore"
 import { Button } from "@/components/ui/button"
 import { 
-  LogOut, User, Home, MessageCircle, Menu, Bell, Settings, BookOpen, Users 
+  LogOut, User, Home, MessageCircle, BookOpen, Users, ShieldCheck
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -13,7 +13,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const router = useRouter();
   const { currentUser, logout, isLoggedIn } = useMDMStore();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // 로그인 체크
   useEffect(() => {
@@ -47,6 +46,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 <Home size={16} className="mr-2"/> 홈
               </Button>
             </Link>
+            
+            {/* 💡 신규 추가: 품질팀 대시보드 메뉴 */}
+            <Link href="/qm">
+              <Button variant="ghost" size="sm" className={`text-sm font-medium ${pathname.startsWith('/qm') ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-900'}`}>
+                <ShieldCheck size={16} className="mr-2"/> 품질팀 QM검증
+              </Button>
+            </Link>
+
             <Link href="/community">
               <Button variant="ghost" size="sm" className={`text-sm font-medium ${pathname.startsWith('/community') ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500 hover:text-slate-900'}`}>
                 <MessageCircle size={16} className="mr-2"/> 커뮤니티
@@ -58,12 +65,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         {/* 우측: 유틸리티 및 사용자 메뉴 */}
         <div className="flex items-center gap-2 md:gap-4">
           
-          {/* 💡 [복구] 사용설명서 버튼 */}
           <Button variant="ghost" size="sm" className="hidden md:flex text-slate-500 hover:text-indigo-600 gap-2" onClick={() => window.open('/manual', '_blank')}>
             <BookOpen size={16} /> <span className="text-xs">사용설명서</span>
           </Button>
 
-          {/* 💡 [복구] 관리자 메뉴 (권한 체크) */}
+          {/* 관리자 메뉴 (권한 체크) */}
           {currentUser?.isAdmin && (
              <Link href="/admin">
                <Button variant="ghost" size="sm" className={`hidden md:flex gap-2 ${pathname.startsWith('/admin') ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500 hover:text-slate-900'}`}>

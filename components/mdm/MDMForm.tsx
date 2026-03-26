@@ -6,7 +6,7 @@ import {
   Save, MessageSquare, Send, AlertTriangle, 
   HelpCircle, BookOpen, Loader2, User, 
   CheckCircle, XCircle, PlayCircle, PanelRightOpen, PanelRightClose,
-  ArrowRight, Tag, Copy, FileText
+  ArrowRight, Tag, Copy, FileText, RotateCcw
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 import { MDM_FORM_SCHEMA, FieldMeta } from "@/lib/constants/sap-fields"
 import { useMDMStore } from "@/stores/useMDMStore"
@@ -89,11 +88,12 @@ export function MDMForm() {
     isPromoDirect: false, isBrandDirect: false
   });
 
-  // 권한 체크
+  // 권한 체크: '검토중(Review)' 상태까지는 작성자가 언제든지 수정할 수 있게 개편
   const isOwner = activeRequest?.requesterName === currentUser?.name;
   const isAdmin = currentUser?.isAdmin;
   const isRequestedStatus = activeRequest?.status === 'Requested';
-  const canEdit = isNewMode || (isOwner && isRequestedStatus) || isAdmin;
+  const isReviewStatus = activeRequest?.status === 'Review';
+  const canEdit = isNewMode || (isOwner && (isRequestedStatus || isReviewStatus)) || isAdmin;
   const canEditSapCode = isAdmin; 
 
   const generateDefaultValues = () => {
@@ -297,15 +297,24 @@ export function MDMForm() {
     } finally { setIsSubmitting(false); }
   }
 
-  // 상태 변경 (승인/반려/검토)
+  // 상태 변경 (승인/반려/검토/검토완료)
   const handleStatusChange = async (status: string) => {
-    if (!activeRequest || isNewMode || !confirm(`${status} 처리하시겠습니까?`)) return;
-    if (status === 'Approved' && !form.getValues('MATNR')) return alert("승인을 위해서는 자재코드(MATNR) 입력이 필요합니다.");
+    if (!activeRequest || isNewMode) return;
+
+    let statusLabel = status;
+    if (status === 'Review') statusLabel = '검토중';
+    if (status === 'ReviewCompleted') statusLabel = '검토완료';
+    if (status === 'Approved') statusLabel = '승인';
+    if (status === 'Reject') statusLabel = '반려';
+
+    if (!confirm(`[${statusLabel}] 상태로 변경하시겠습니까?`)) return;
+    if (status === 'Approved' && !form.getValues('MATNR')) return alert("최종 승인을 위해서는 자재코드(MATNR) 입력이 필수입니다.");
+    
     setIsSubmitting(true);
     try {
         await updateStatusAction(activeRequest.id, status, currentUser?.name || 'Admin');
         updateStatus(activeRequest.id, status as any);
-        await createCommentAction(activeRequest.id, `🔄 상태 변경: ${status}`, currentUser?.name || 'Admin');
+        await createCommentAction(activeRequest.id, `🔄 상태 변경: ${statusLabel}`, currentUser?.name || 'Admin');
         const latest = await getRequestsAction();
         setRequests(latest);
         const updatedReq = latest.find(r => r.id === activeRequest.id);
@@ -386,7 +395,7 @@ export function MDMForm() {
             <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                     {activeRequest?.data.MAKTX || (isNewMode ? "신규 자재 생성" : "품명 없음")}
-                    {!isNewMode && <span className={`px-2 py-0.5 rounded text-[10px] border ${activeRequest?.status === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500'}`}>{activeRequest?.status}</span>}
+                    {!isNewMode && <span className={`px-2 py-0.5 rounded text-[10px] border ${activeRequest?.status === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : activeRequest?.status === 'ReviewCompleted' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-500'}`}>{activeRequest?.status === 'ReviewCompleted' ? 'ReviewCompleted' : activeRequest?.status}</span>}
                 </h2>
                 <span className="text-xs text-slate-400 flex items-center gap-2">
                     {activeRequest?.id} <span className="w-px h-3 bg-slate-200"></span> {activeRequest?.requesterName || currentUser?.name}
@@ -397,13 +406,39 @@ export function MDMForm() {
             {isNewMode && <Button size="sm" variant="outline" className="text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 h-9" onClick={() => setIsCopyDialogOpen(true)}><Copy size={14} className="mr-1"/> 불러오기</Button>}
             {!isNewMode && <Button size="sm" variant="ghost" className="text-slate-500 h-9 hover:text-slate-900" onClick={openTemplateDialog}><FileText size={14} className="mr-1"/> 협조전</Button>}
             {canEdit && <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 h-9 px-4">{isSubmitting ? <Loader2 size={14} className="animate-spin mr-2"/> : <Save size={14} className="mr-2"/>} 저장</Button>}
-            {isAdmin && !isNewMode && activeRequest?.status === 'Requested' && <Button size="sm" variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 hover:bg-orange-100 h-9" onClick={() => handleStatusChange('Review')}><PlayCircle size={14} className="mr-2"/> 검토시작</Button>}
+            
+            {/* 관리자 전용 상태 변경 버튼들 */}
+            {isAdmin && !isNewMode && activeRequest?.status === 'Requested' && (
+                <Button size="sm" variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 hover:bg-orange-100 h-9" onClick={() => handleStatusChange('Review')}>
+                    <PlayCircle size={14} className="mr-2"/> 검토시작
+                </Button>
+            )}
+            
             {isAdmin && !isNewMode && activeRequest?.status === 'Review' && (
                 <>
-                    <Button size="sm" variant="outline" className="text-red-600 border-red-200 bg-red-50 hover:bg-red-100 h-9" onClick={() => handleStatusChange('Reject')}><XCircle size={14} className="mr-2"/> 반려</Button>
-                    <Button size="sm" variant="outline" className="text-green-600 border-green-200 bg-green-50 hover:bg-green-100 h-9" onClick={() => handleStatusChange('Approved')}><CheckCircle size={14} className="mr-2"/> 승인</Button>
+                    <Button size="sm" variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100 h-9" onClick={() => handleStatusChange('ReviewCompleted')}>
+                        <CheckCircle size={14} className="mr-2"/> 검토완료
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-red-600 border-red-200 bg-red-50 hover:bg-red-100 h-9" onClick={() => handleStatusChange('Reject')}>
+                        <XCircle size={14} className="mr-2"/> 반려
+                    </Button>
                 </>
             )}
+
+            {isAdmin && !isNewMode && activeRequest?.status === 'ReviewCompleted' && (
+                <>
+                    <Button size="sm" variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 hover:bg-orange-100 h-9" onClick={() => handleStatusChange('Review')}>
+                        <RotateCcw size={14} className="mr-2"/> 검토중으로 해제
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-green-600 border-green-200 bg-green-50 hover:bg-green-100 h-9" onClick={() => handleStatusChange('Approved')}>
+                        <CheckCircle size={14} className="mr-2"/> 최종 승인
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-red-600 border-red-200 bg-red-50 hover:bg-red-100 h-9" onClick={() => handleStatusChange('Reject')}>
+                        <XCircle size={14} className="mr-2"/> 반려
+                    </Button>
+                </>
+            )}
+
             <div className="h-6 w-px bg-slate-200 mx-1"></div>
             <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(!isChatOpen)} className={`h-9 w-9 ${isChatOpen ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}>{isChatOpen ? <PanelRightClose size={18}/> : <PanelRightOpen size={18}/>}</Button>
         </div>
@@ -449,7 +484,6 @@ export function MDMForm() {
                         <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm flex-1 mb-8">
                             {activeTab === 'naming' ? (
                                 <div className="h-full flex flex-col">
-                                    {/* 💡 상태를 props로 전달하여 유지 */}
                                     <ProductNameGenerator data={genState} onDataChange={setGenState} onNameChange={handleNameGenerate} />
                                     <div className="mt-8 p-4 bg-indigo-50 rounded-lg text-sm text-indigo-800 border border-indigo-100">
                                         <p className="font-bold mb-2">📌 작성 가이드</p>

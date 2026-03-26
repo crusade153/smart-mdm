@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Search, Plus, RefreshCw, MessageSquare, ArrowRight, ChevronLeft, ChevronRight, Download, FileText, ListFilter } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Search, Plus, RefreshCw, MessageSquare, ArrowRight, ChevronLeft, ChevronRight, Download, FileText, Mail, Copy } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 
 const ITEMS_PER_PAGE = 15;
@@ -25,9 +25,13 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('All'); // 💡 [추가] 상태 필터
+  const [statusFilter, setStatusFilter] = useState('All'); 
   const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [templateText, setTemplateText] = useState("");
+  
+  // 품질검증 메일 팝업 상태
+  const [isEmailTemplateOpen, setIsEmailTemplateOpen] = useState(false);
+  const [emailTemplateText, setEmailTemplateText] = useState("");
 
   const loadData = async () => {
     setIsLoading(true);
@@ -45,7 +49,6 @@ export default function DashboardPage() {
       (req.requesterName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (req.id || "").toLowerCase().includes(searchTerm.toLowerCase());
     
-    // 💡 [추가] 상태 필터링 로직
     const matchesStatus = statusFilter === 'All' ? true : req.status === statusFilter;
 
     return matchesSearch && matchesStatus;
@@ -97,10 +100,49 @@ ${itemList}
     setIsTemplateOpen(true);
   };
 
+  const openEmailTemplate = () => {
+    const targets = requests.filter(r => selectedIds.includes(r.id));
+    if (targets.length === 0) return alert("선택된 항목이 없습니다.");
+
+    const today = new Date().toLocaleDateString();
+
+    const itemList = targets.map((r, i) => {
+        const d = r.data;
+        return `[${i+1}] ${d.MAKTX || '품명 미정'}
+  - 단량/기본단위: ${d.NTGEW || '-'} / ${d.MEINS || '-'}
+  - 환산단위: ${d.MEINH || '-'}
+  - 최소 잔존 셸프라이프: ${d.MHDRZ || '-'}일
+  - 최대 셸프라이프: ${d.MHDHB || '-'}일
+  - QM숙성기간: ${d.MWERT_11 || '-'}일
+  - 요청번호: ${r.id}`;
+    }).join('\n\n');
+
+    const text = `[품질검증요청] 신규 자재 코드 품질 검증 요청 (총 ${targets.length}건)
+
+수신: 품질관리 담당자 귀하
+발신: ${currentUser?.name || '관리자'}
+일자: ${today}
+
+아래 자재에 대한 품질 검증(셸프라이프 및 숙성기간 등)을 요청드립니다.
+검토 후 회신 부탁드립니다.
+
+--------------------------------------------------
+
+${itemList}
+
+--------------------------------------------------
+
+감사합니다.`.trim();
+
+    setEmailTemplateText(text);
+    setIsEmailTemplateOpen(true);
+  };
+
   const getStatusBadge = (status: string) => {
     switch(status) {
       case 'Approved': return <Badge className="bg-green-100 text-green-700 border-green-200">승인완료</Badge>;
       case 'Reject': return <Badge className="bg-red-100 text-red-700 border-red-200">반려됨</Badge>;
+      case 'ReviewCompleted': return <Badge className="bg-blue-100 text-blue-700 border-blue-200">검토완료</Badge>;
       case 'Review': return <Badge className="bg-orange-100 text-orange-700 border-orange-200">검토중</Badge>;
       default: return <Badge variant="outline" className="text-slate-500 bg-slate-50">요청중</Badge>;
     }
@@ -110,6 +152,20 @@ ${itemList}
     <div className="space-y-6 h-full flex flex-col">
       <Dialog open={isTemplateOpen} onOpenChange={setIsTemplateOpen}>
         <DialogContent className="max-w-2xl bg-white"><DialogHeader><DialogTitle>일괄 업무협조의뢰</DialogTitle></DialogHeader><div className="py-2"><Textarea value={templateText} readOnly className="h-[450px] bg-slate-50 border-slate-200 font-mono text-sm resize-none"/></div><DialogFooter><Button onClick={() => setIsTemplateOpen(false)}>닫기</Button></DialogFooter></DialogContent>
+      </Dialog>
+
+      <Dialog open={isEmailTemplateOpen} onOpenChange={setIsEmailTemplateOpen}>
+        <DialogContent className="max-w-2xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-700"><Mail size={20}/> 품질팀 검증 메일 작성</DialogTitle>
+            <DialogDescription>내용을 복사하여 이메일 본문에 붙여넣으세요.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2"><Textarea value={emailTemplateText} readOnly className="h-[450px] bg-slate-50 border-slate-200 font-mono text-sm resize-none"/></div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEmailTemplateOpen(false)}>닫기</Button>
+            <Button onClick={() => { navigator.clipboard.writeText(emailTemplateText); alert("클립보드에 복사되었습니다."); setIsEmailTemplateOpen(false); }} className="bg-blue-600 hover:bg-blue-700 gap-2"><Copy size={16}/> 내용 복사</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {/* 1. 상단 툴바 */}
@@ -129,6 +185,11 @@ ${itemList}
                         <Button variant="outline" className="h-10" onClick={openBulkTemplate}>
                             <FileText size={16} className="mr-2"/> 협조전 ({selectedIds.length})
                         </Button>
+                        {currentUser?.isAdmin && (
+                            <Button variant="outline" className="h-10 text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100" onClick={openEmailTemplate}>
+                                <Mail size={16} className="mr-2"/> 품질팀 메일작성 ({selectedIds.length})
+                            </Button>
+                        )}
                     </>
                 )}
                 
@@ -148,10 +209,10 @@ ${itemList}
             </div>
         </div>
 
-        {/* 💡 [추가] 상태 필터 버튼 그룹 */}
+        {/* 상태 필터 버튼 그룹 */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {['All', 'Requested', 'Review', 'Approved', 'Reject'].map((status) => {
-                const label = status === 'All' ? '전체' : status === 'Requested' ? '요청중' : status === 'Review' ? '검토중' : status === 'Approved' ? '승인완료' : '반려됨';
+            {['All', 'Requested', 'Review', 'ReviewCompleted', 'Approved', 'Reject'].map((status) => {
+                const label = status === 'All' ? '전체' : status === 'Requested' ? '요청중' : status === 'Review' ? '검토중' : status === 'ReviewCompleted' ? '검토완료' : status === 'Approved' ? '승인완료' : '반려됨';
                 const isActive = statusFilter === status;
                 return (
                     <button 

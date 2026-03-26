@@ -1,6 +1,6 @@
 // src/types/mdm.ts
 
-export type RequestStatus = 'Requested' | 'Review' | 'Approved' | 'Reject';
+export type RequestStatus = 'Requested' | 'Review' | 'ReviewCompleted' | 'Approved' | 'Reject';
 
 export interface SapMasterData {
   [key: string]: any; // 인덱스 시그니처 (유연한 필드 접근 허용)
