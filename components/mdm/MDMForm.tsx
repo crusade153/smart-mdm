@@ -80,6 +80,7 @@ export function MDMForm() {
   // 기능용 State
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [isTemplateOpen, setIsTemplateOpen] = useState(false);
+  const isTemplateLoaded = useRef(false);
   const [templateText, setTemplateText] = useState("");
 
   // 💡 생성기 상태 (탭 이동 시에도 값 유지)
@@ -128,6 +129,10 @@ export function MDMForm() {
   // 💡 데이터 로드 및 상태 복구 로직
   useEffect(() => {
     if (activeRequest && !isNewMode) {
+      if (isTemplateLoaded.current) {
+        isTemplateLoaded.current = false;
+        return;
+      }
       const currentData = form.getValues();
       if (JSON.stringify(currentData) !== JSON.stringify(activeRequest.data)) {
         const mergedData = { ...generateDefaultValues(), ...activeRequest.data };
@@ -166,27 +171,25 @@ export function MDMForm() {
 
   // 템플릿 불러오기
   const handleLoadTemplate = (targetRequest: MaterialRequest) => {
-    if (!confirm(`[${targetRequest.data.MAKTX}] 내용을 불러오시겠습니까?`)) return;
-    const { MATNR, MAKTX, ...rest } = targetRequest.data; 
-    const currentValues = form.getValues();
-    form.reset({ ...currentValues, ...rest });
-    
-    // 생성기 상태도 복구 시도
-    if (targetRequest.data.GEN_NAME) {
-        setGenState(prev => ({
-            ...prev,
-            promo: targetRequest.data.GEN_PROMO || "",
-            brand: targetRequest.data.GEN_BRAND || "",
-            name: targetRequest.data.GEN_NAME || "",
-            weight: targetRequest.data.GEN_WEIGHT || "",
-            unit: targetRequest.data.GEN_UNIT || "g",
-            bundleQty: targetRequest.data.GEN_BUNDLE || "1",
-            boxQty: targetRequest.data.GEN_BOX || "",
-        }));
-    }
+    const { MATNR, MAKTX, ...rest } = targetRequest.data;
+    const defaults = generateDefaultValues();
+    isTemplateLoaded.current = true;
+    form.reset({ ...defaults, ...rest });
+
+    // 생성기 상태 복구
+    setGenState({
+      promo: targetRequest.data.GEN_PROMO || "",
+      brand: targetRequest.data.GEN_BRAND || "",
+      name: targetRequest.data.GEN_NAME || "",
+      weight: targetRequest.data.GEN_WEIGHT || "",
+      unit: targetRequest.data.GEN_UNIT || "g",
+      bundleQty: targetRequest.data.GEN_BUNDLE || "1",
+      boxQty: targetRequest.data.GEN_BOX || "",
+      isPromoDirect: !!targetRequest.data.GEN_PROMO_DIRECT,
+      isBrandDirect: !!targetRequest.data.GEN_BRAND_DIRECT,
+    });
 
     setIsCopyDialogOpen(false);
-    alert("데이터를 불러왔습니다. 품명과 주요 필드를 확인해주세요.");
   };
 
   // 협조전 텍스트 생성
@@ -403,7 +406,7 @@ export function MDMForm() {
             </div>
         </div>
         <div className="flex items-center gap-2">
-            {isNewMode && <Button size="sm" variant="outline" className="text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 h-9" onClick={() => setIsCopyDialogOpen(true)}><Copy size={14} className="mr-1"/> 불러오기</Button>}
+            <Button size="sm" variant="outline" className="text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 h-9" onClick={() => setIsCopyDialogOpen(true)}><Copy size={14} className="mr-1"/> 불러오기</Button>
             {!isNewMode && <Button size="sm" variant="ghost" className="text-slate-500 h-9 hover:text-slate-900" onClick={openTemplateDialog}><FileText size={14} className="mr-1"/> 협조전</Button>}
             {canEdit && <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 h-9 px-4">{isSubmitting ? <Loader2 size={14} className="animate-spin mr-2"/> : <Save size={14} className="mr-2"/>} 저장</Button>}
             

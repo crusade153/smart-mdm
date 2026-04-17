@@ -1,9 +1,49 @@
 "use server"
 
-import { supabase } from "@/lib/supabase"; 
-import { getSheetByTitle } from "@/lib/google-sheets"; 
+import { supabase } from "@/lib/supabase";
+import { getSheetByTitle, getOrCreateSheet } from "@/lib/google-sheets";
 import { SapMasterData } from "@/types/mdm";
 import { MDM_FORM_SCHEMA } from "@/lib/constants/sap-fields";
+
+const PLANT_LABELS: Record<string, string> = { '1021': 'K1', '1022': 'K3', '1023': 'K2', '1031': 'FBH' };
+const TEMP_LABELS: Record<string, string> = { '01': '상온', '02': '냉장', '03': '냉동', 'ZZ': '기타' };
+
+async function writeApprovalToSheet(requestId: string, sapData: any, requesterName: string) {
+  try {
+    const headers = ['승인일시', '요청ID', '플랜트', '자재코드', '네이밍(품명)', 'MRP관리자', '총셀프라이프(일)', '온도조건', 'QM숙성기간(일)', '요청자'];
+    const sheet = await getOrCreateSheet('승인완료_알림', headers);
+    await sheet.addRow([
+      new Date().toLocaleString('ko-KR'),
+      requestId,
+      `${sapData.WERKS || ''} (${PLANT_LABELS[sapData.WERKS] || ''})`,
+      sapData.MATNR || '',
+      sapData.MAKTX || '',
+      sapData.DISPO || '',
+      sapData.MHDHB || '',
+      `${sapData.TEMPB || ''} (${TEMP_LABELS[sapData.TEMPB] || ''})`,
+      sapData.MWERT_11 || '',
+      requesterName,
+    ]);
+  } catch (error) {
+    console.error('Google Sheet 승인완료 기록 실패:', error);
+  }
+}
+
+async function writeNewRequestToSheet(requestId: string, sapData: any, requesterName: string) {
+  try {
+    const headers = ['요청일시', '요청ID', '네이밍(품명)', '플랜트', '요청자'];
+    const sheet = await getOrCreateSheet('신규요청_알림', headers);
+    await sheet.addRow([
+      new Date().toLocaleString('ko-KR'),
+      requestId,
+      sapData.MAKTX || '',
+      `${sapData.WERKS || ''} (${PLANT_LABELS[sapData.WERKS] || ''})`,
+      requesterName,
+    ]);
+  } catch (error) {
+    console.error('Google Sheet 신규요청 기록 실패:', error);
+  }
+}
 
 // 필드 키(예: NTGEW)를 한글 라벨(예: 순중량)로 변환하는 함수
 function getFieldLabel(key: string) {
@@ -49,8 +89,9 @@ export async function createRequestAction(data: SapMasterData, requesterName: st
     });
 
     if (error) throw error;
-    
+
     await logAudit(newId, requesterName, 'CREATE', '-', '-', '신규 생성');
+    await writeNewRequestToSheet(newId, data, requesterName);
 
     return { success: true, message: "요청이 성공적으로 저장되었습니다.", id: newId };
 
@@ -199,14 +240,14 @@ export async function updateStatusAction(requestId: string, status: string, acto
   try {
     const { data: row, error: fetchError } = await supabase
         .from('sm_requests')
-        .select('status')
+        .select('status, sap_data, requester_name')
         .eq('id', requestId)
         .single();
 
     if (fetchError) throw fetchError;
 
     const oldStatus = row.status;
-    
+
     if (oldStatus !== status) {
         const updatePayload: any = { status: status };
         if (status === 'Approved') {
@@ -221,6 +262,10 @@ export async function updateStatusAction(requestId: string, status: string, acto
         if (updateError) throw updateError;
 
         await logAudit(requestId, actorName, 'STATUS_CHANGE', '상태', oldStatus, status);
+
+        if (status === 'Approved') {
+            await writeApprovalToSheet(requestId, row.sap_data, row.requester_name);
+        }
     }
 
     return { success: true, message: "상태가 변경되었습니다." };

@@ -28,10 +28,19 @@ export async function getSheetDoc() {
 export async function getSheetByTitle(title: string) {
   const doc = await getSheetDoc();
   const sheet = doc.sheetsByTitle[title];
-  
+
   if (!sheet) {
     throw new Error(`구글 시트에서 '${title}' 탭을 찾을 수 없습니다.`);
   }
-  
+
+  return sheet;
+}
+
+export async function getOrCreateSheet(title: string, headers: string[]) {
+  const doc = await getSheetDoc();
+  let sheet = doc.sheetsByTitle[title];
+  if (!sheet) {
+    sheet = await doc.addSheet({ title, headerValues: headers });
+  }
   return sheet;
 }

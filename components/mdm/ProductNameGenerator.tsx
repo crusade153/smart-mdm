@@ -65,7 +65,7 @@ export function ProductNameGenerator({ data, onDataChange, onNameChange }: Props
     const part4 = weight ? ` ${weight}${displayUnit}` : "";
     
     // 번들 수량이 1일 때도 생략하지 않고 표시되도록 수정
-    const part5 = bundleQty ? ` * ${bundleQty}` : "";
+    const part5 = bundleQty ? `*${bundleQty}` : "";
     const part6 = boxQty ? ` (${boxQty}/box)` : "";
 
     const fullName = `${part1}${part2}${part3}${part4}${part5}${part6}`.trim();
@@ -191,7 +191,7 @@ export function ProductNameGenerator({ data, onDataChange, onNameChange }: Props
         <div className="w-full flex flex-col items-center gap-1 mt-1 border-t border-slate-200/50 pt-2">
             {isOverLimit && <div className="text-xs font-bold text-red-600 animate-pulse flex items-center gap-1"><AlertTriangle size={12} className="inline"/> 40자 초과! 저장할 수 없습니다.</div>}
             <div className="flex justify-between w-full px-2 text-[11px]">
-                <span className="text-slate-500"><span className="font-bold text-slate-400 mr-1">Ex:</span> [코리아세븐] 하림 치즈 103g * 1 (12/box)</span>
+                <span className="text-slate-500"><span className="font-bold text-slate-400 mr-1">Ex:</span> [코리아세븐] 하림 치즈 103g*1 (12/box)</span>
                 <span className={`font-mono font-bold ${isOverLimit ? 'text-red-600' : 'text-green-600'}`}>{currentLength} / {MAX_LENGTH}자</span>
             </div>
         </div>
